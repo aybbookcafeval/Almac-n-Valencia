@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #bf6849;
+  --color-primary-foreground: #ffffff;
+  --color-background: #ffffff;
+  --color-foreground: #000000;
+  --color-card: #ffffff;
+  --color-card-foreground: #000000;
+  --color-border: #e5e7eb;
+  --color-table-header: #bf6849;
+  --shadow-primary-subtle: 0 4px 6px -1px rgba(191, 104, 73, 0.2), 0 2px 4px -1px rgba(191, 104, 73, 0.06);
+}
+
+.table-header {
+  background-color: var(--color-table-header);
+  color: white;
+}
+
+@media print {
+  @page {
+    margin: 1cm;
+    size: portrait;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Hide everything by default when printing */
+  nav, 
+  aside, 
+  header, 
+  button, 
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Ensure the main content is visible and takes full width */
+  main, 
+  .print\:block {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Reset shadows and borders for printing */
+  .shadow-primary-subtle,
+  .border {
+    box-shadow: none !important;
+    border: 1px solid #eee !important;
+  }
+
+  /* Table specific print styles */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  th, td {
+    border: 1px solid #ddd !important;
+    padding: 8px !important;
+    font-size: 10pt !important;
+  }
+
+  th {
+    background-color: #f3f4f6 !important;
+    color: black !important;
+  }
+
+  /* Ensure colors are printed */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

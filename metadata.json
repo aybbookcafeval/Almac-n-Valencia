@@ -1,0 +1,8 @@
+{
+  "name": "Gestión de Almacenes Val",
+  "description": "Sistema de gestión de inventario de materia prima para almacén de alimentos.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
+}
