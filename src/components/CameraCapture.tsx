@@ -11,18 +11,35 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
 
   useEffect(() => {
     const startCamera = async () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
       try {
-        const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const mediaStream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: { exact: facingMode } } 
+        });
         setStream(mediaStream);
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream;
         }
       } catch (err: any) {
-        console.error('Error accessing camera:', err);
-        setError(err.name === 'NotFoundError' ? 'No se encontró ninguna cámara.' : 'No se pudo acceder a la cámara. Por favor, verifica los permisos.');
+        console.warn('Exact facing mode failed, trying fallback:', facingMode, err);
+        try {
+          const mediaStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode } 
+          });
+          setStream(mediaStream);
+          if (videoRef.current) {
+            videoRef.current.srcObject = mediaStream;
+          }
+        } catch (err2: any) {
+          console.error('Error accessing camera:', err2);
+          setError('No se pudo acceder a la cámara o no es compatible.');
+        }
       }
     };
     startCamera();
@@ -32,7 +49,11 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose
         stream.getTracks().forEach(track => track.stop());
       }
     };
-  }, []);
+  }, [facingMode]);
+
+  const toggleFacingMode = () => {
+    setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
+  };
 
   const captureImage = () => {
     if (videoRef.current && canvasRef.current) {
@@ -67,11 +88,16 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onClose
           <>
             <video ref={videoRef} autoPlay playsInline className="w-full rounded-lg mb-4" />
             <canvas ref={canvasRef} className="hidden" />
-            <div className="flex justify-center">
+            <div className="flex justify-center gap-4">
+              <button
+                onClick={toggleFacingMode}
+                className="flex items-center px-4 py-3 bg-gray-600 text-white rounded-full hover:bg-gray-700 transition-colors"
+              >
+                Cambiar Cámara
+              </button>
               <button
                 onClick={captureImage}
-                className="flex items-center px-6 py-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors"
-              >
+                className="flex items-center px-6 py-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors">
                 <Camera size={24} className="mr-2" />
                 Capturar
               </button>
