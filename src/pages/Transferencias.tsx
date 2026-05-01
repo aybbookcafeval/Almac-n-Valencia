@@ -1,13 +1,17 @@
 import React, { useState } from 'react';
 import toast from 'react-hot-toast';
 import { useAppContext } from '../context/AppContext';
-import { ArrowRightLeft, AlertCircle, X } from 'lucide-react';
+import { ArrowRightLeft, AlertCircle, X, Camera } from 'lucide-react';
 import { TransferenciaFormData } from '../types';
 import { SearchableSelect } from '../components/SearchableSelect';
+import { CameraCapture } from '../components/CameraCapture';
+import { identifyProductsFromImage } from '../services/ai';
 
 export default function Transferencias() {
   const { materiasPrimas, almacenes, stockAlmacen, transferirStock } = useAppContext();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
+  const [isIdentifying, setIsIdentifying] = useState(false);
   
   const [formData, setFormData] = useState<TransferenciaFormData>({
     almacen_origen_id: '',
@@ -53,6 +57,59 @@ export default function Transferencias() {
       ...formData,
       items: formData.items.filter((_, i) => i !== index)
     });
+  };
+
+  const handleCapture = async (file: File) => {
+    setShowCamera(false);
+    setIsIdentifying(true);
+    const toastId = toast.loading('Analizando imagen con IA...');
+    
+    try {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = async () => {
+        try {
+          const base64 = (reader.result as string).split(',')[1];
+          const results = await identifyProductsFromImage(base64, materiasPrimas);
+          
+          if (results.length === 0) {
+            toast.error('No se encontraron productos en la imagen', { id: toastId });
+            return;
+          }
+
+          const newItems = results.map(r => {
+             const mp = materiasPrimas.find(m => m.id === r.materia_prima_id);
+             return {
+               materia_prima_id: r.materia_prima_id,
+               cantidad: r.cantidad,
+               unidad_medida: mp ? mp.unidad_medida : 'kg'
+             };
+          });
+
+          setFormData(prev => {
+            const hasEmptyRow = prev.items.length === 1 && prev.items[0].materia_prima_id === '';
+            return {
+              ...prev,
+              items: hasEmptyRow ? newItems : [...prev.items, ...newItems]
+            };
+          });
+
+          toast.success(`Se identificaron ${results.length} producto(s) exitosamente`, { id: toastId });
+        } catch (err: any) {
+          toast.error(err.message || 'Error al analizar la imagen', { id: toastId });
+        } finally {
+          setIsIdentifying(false);
+        }
+      };
+      
+      reader.onerror = () => {
+        toast.error('Error al leer la imagen', { id: toastId });
+        setIsIdentifying(false);
+      };
+    } catch (error) {
+      toast.error('Error al capturar', { id: toastId });
+      setIsIdentifying(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -140,7 +197,18 @@ export default function Transferencias() {
             </div>
 
             <div className="space-y-4">
-              <label className="block text-sm font-medium text-gray-700">Productos</label>
+              <div className="flex justify-between items-center mb-2">
+                <label className="block text-sm font-medium text-gray-700">Productos</label>
+                <button
+                  type="button"
+                  onClick={() => setShowCamera(true)}
+                  disabled={isIdentifying}
+                  className="flex items-center px-4 py-2 bg-gray-900 text-white rounded-md text-sm hover:bg-gray-800 disabled:opacity-50"
+                >
+                  <Camera size={16} className="mr-2" />
+                  {isIdentifying ? 'Analizando...' : 'Escanear IA'}
+                </button>
+              </div>
               {formData.items.map((item, index) => (
                 <div key={index} className="p-4 bg-gray-50 rounded-lg space-y-3 relative border border-gray-100">
                   {formData.items.length > 1 && (
@@ -218,7 +286,7 @@ export default function Transferencias() {
           <div className="pt-4">
             <button
               type="submit"
-              disabled={isSubmitting || formData.items.some(item => item.cantidad <= 0 || item.cantidad > getAvailableStock(item.materia_prima_id, formData.almacen_origen_id))}
+              disabled={isSubmitting || isIdentifying || formData.items.some(item => item.cantidad <= 0 || item.cantidad > getAvailableStock(item.materia_prima_id, formData.almacen_origen_id))}
               className="w-full flex items-center justify-center px-6 py-3 bg-black text-white rounded-md hover:bg-gray-800 transition-colors disabled:opacity-50 font-medium"
             >
               {isSubmitting ? (
@@ -236,6 +304,13 @@ export default function Transferencias() {
           </div>
         </form>
       </div>
+
+      {showCamera && (
+        <CameraCapture 
+          onCapture={handleCapture}
+          onClose={() => setShowCamera(false)}
+        />
+      )}
     </div>
   );
 }
