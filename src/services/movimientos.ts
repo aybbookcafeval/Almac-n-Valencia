@@ -97,7 +97,8 @@ export const realizarTransferencia = async (data: TransferenciaFormData): Promis
       p_almacen_destino_id: data.almacen_destino_id,
       p_cantidad: item.cantidad,
       p_bundle_id: bundle_id,
-      p_comentario: data.comentario
+      p_comentario: data.comentario,
+      p_imagen_url: data.imagen_url
     });
 
     if (error) throw error;
@@ -113,9 +114,9 @@ export const uploadEvidence = async (file: File): Promise<string> => {
   const fileName = `${Math.random()}.${fileExt}`;
   const filePath = `${fileName}`;
 
-  const { error: uploadError } = await supabase.storage.from('movimientos').upload(filePath, file);
+  const { error: uploadError } = await supabase.storage.from('transfer-evidence').upload(filePath, file);
   if (uploadError) throw uploadError;
 
-  const { data } = supabase.storage.from('movimientos').getPublicUrl(filePath);
+  const { data } = supabase.storage.from('transfer-evidence').getPublicUrl(filePath);
   return data.publicUrl;
 };

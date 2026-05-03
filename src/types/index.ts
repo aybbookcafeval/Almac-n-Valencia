@@ -73,4 +73,5 @@ export type TransferenciaFormData = {
   almacen_destino_id: string;
   items: TransferenciaItem[];
   comentario?: string;
+  imagen_url?: string;
 };

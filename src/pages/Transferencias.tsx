@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { useAppContext } from '../context/AppContext';
-import { ArrowRightLeft, AlertCircle, X, Camera } from 'lucide-react';
+import { ArrowRightLeft, AlertCircle, X, Camera, Upload } from 'lucide-react';
 import { TransferenciaFormData } from '../types';
 import { SearchableSelect } from '../components/SearchableSelect';
 import { CameraCapture } from '../components/CameraCapture';
@@ -12,6 +12,8 @@ export default function Transferencias() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [isIdentifying, setIsIdentifying] = useState(false);
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [formData, setFormData] = useState<TransferenciaFormData>({
     almacen_origen_id: '',
@@ -61,6 +63,7 @@ export default function Transferencias() {
 
   const handleCapture = async (file: File) => {
     setShowCamera(false);
+    setAttachedFile(file);
     setIsIdentifying(true);
     const toastId = toast.loading('Analizando imagen con IA...');
     
@@ -112,6 +115,14 @@ export default function Transferencias() {
     }
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleCapture(file);
+    }
+  };
+
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.almacen_origen_id || !formData.almacen_destino_id) {
@@ -133,8 +144,9 @@ export default function Transferencias() {
 
     try {
       setIsSubmitting(true);
-      await transferirStock(formData);
+      await transferirStock(formData, attachedFile || undefined);
       toast.success('Transferencia realizada con éxito');
+      setAttachedFile(null);
       setFormData({
         almacen_origen_id: '',
         almacen_destino_id: '',
@@ -199,16 +211,36 @@ export default function Transferencias() {
             <div className="space-y-4">
               <div className="flex justify-between items-center mb-2">
                 <label className="block text-sm font-medium text-gray-700">Productos</label>
-                <button
-                  type="button"
-                  onClick={() => setShowCamera(true)}
-                  disabled={isIdentifying}
-                  className="flex items-center px-4 py-2 bg-gray-900 text-white rounded-md text-sm hover:bg-gray-800 disabled:opacity-50"
-                >
-                  <Camera size={16} className="mr-2" />
-                  {isIdentifying ? 'Analizando...' : 'Escanear IA'}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowCamera(true)}
+                    disabled={isIdentifying}
+                    className="flex items-center px-4 py-2 bg-gray-900 text-white rounded-md text-sm hover:bg-gray-800 disabled:opacity-50"
+                  >
+                    <Camera size={16} className="mr-2" />
+                    {isIdentifying ? 'Analizando...' : 'Cámara'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isIdentifying}
+                    className="flex items-center px-4 py-2 bg-gray-900 text-white rounded-md text-sm hover:bg-gray-800 disabled:opacity-50"
+                  >
+                    <Upload size={16} className="mr-2" />
+                    Subir Imagen
+                  </button>
+                  <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
+                </div>
               </div>
+              {attachedFile && (
+                <div className="mt-2 text-sm text-green-600 flex items-center bg-green-50 p-2 rounded">
+                  <span className="mr-2 flex-grow truncate">✓ {attachedFile.name}</span>
+                  <button type="button" onClick={() => setAttachedFile(null)} className="text-red-500 hover:text-red-700">
+                    <X size={16} />
+                  </button>
+                </div>
+              )}
               {formData.items.map((item, index) => (
                 <div key={index} className="p-4 bg-gray-50 rounded-lg space-y-3 relative border border-gray-100">
                   {formData.items.length > 1 && (

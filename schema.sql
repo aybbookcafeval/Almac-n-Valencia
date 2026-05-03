@@ -124,7 +124,8 @@ CREATE OR REPLACE FUNCTION realizar_transferencia(
   p_almacen_destino_id UUID,
   p_cantidad NUMERIC,
   p_bundle_id TEXT,
-  p_comentario TEXT DEFAULT NULL
+  p_comentario TEXT DEFAULT NULL,
+  p_imagen_url TEXT DEFAULT NULL
 ) RETURNS VOID AS $$
 DECLARE
   v_unidad_medida TEXT;
@@ -135,7 +136,6 @@ BEGIN
   WHERE id = p_materia_prima_id;
 
   -- 1. Restar stock del origen
-  -- El CHECK (stock >= 0) en la tabla stock_almacen lanzará un error si no hay suficiente
   UPDATE stock_almacen
   SET stock = stock - p_cantidad
   WHERE materia_prima_id = p_materia_prima_id AND almacen_id = p_almacen_origen_id;
@@ -148,19 +148,21 @@ BEGIN
 
   -- 3. Registrar movimiento de SALIDA en el origen
   INSERT INTO movimientos (
-    bundle_id, materia_prima_id, almacen_id, tipo, cantidad, unidad_medida, comentario, fecha
+    bundle_id, materia_prima_id, almacen_id, tipo, cantidad, unidad_medida, comentario, imagen_url, fecha
   ) VALUES (
     p_bundle_id, p_materia_prima_id, p_almacen_origen_id, 'salida', p_cantidad, v_unidad_medida, 
     COALESCE(p_comentario, '') || ' (Transferencia a ' || (SELECT nombre FROM almacenes WHERE id = p_almacen_destino_id) || ')',
+    p_imagen_url,
     NOW()
   );
 
   -- 4. Registrar movimiento de ENTRADA en el destino
   INSERT INTO movimientos (
-    bundle_id, materia_prima_id, almacen_id, tipo, cantidad, unidad_medida, comentario, fecha
+    bundle_id, materia_prima_id, almacen_id, tipo, cantidad, unidad_medida, comentario, imagen_url, fecha
   ) VALUES (
     p_bundle_id, p_materia_prima_id, p_almacen_destino_id, 'entrada', p_cantidad, v_unidad_medida, 
     COALESCE(p_comentario, '') || ' (Transferencia desde ' || (SELECT nombre FROM almacenes WHERE id = p_almacen_origen_id) || ')',
+    p_imagen_url,
     NOW()
   );
 

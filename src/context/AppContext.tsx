@@ -156,9 +156,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const transferirStock = async (data: TransferenciaFormData) => {
+  const transferirStock = async (data: TransferenciaFormData, file?: File) => {
     try {
-      await movimientosService.realizarTransferencia(data);
+      let imagen_url = data.imagen_url;
+      if (file) {
+        imagen_url = await movimientosService.uploadEvidence(file);
+      }
+      
+      await movimientosService.realizarTransferencia({ ...data, imagen_url });
       // Recargar datos para asegurar consistencia (o actualizar localmente)
       await loadData();
     } catch (err: any) {
