@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { MateriaPrima, Movimiento, MateriaPrimaFormData, MovimientoFormData, MovimientoBundleFormData, Almacen, StockAlmacen, AlmacenFormData, TransferenciaFormData } from '../types';
+import { MateriaPrima, Movimiento, MateriaPrimaFormData, MovimientoFormData, MovimientoBundleFormData, Almacen, StockAlmacen, AlmacenFormData, TransferenciaFormData, Recepcion } from '../types';
 import { supabase } from '../lib/supabase';
 import * as materiaPrimaService from '../services/materiaPrima';
 import * as movimientosService from '../services/movimientos';
 import * as almacenesService from '../services/almacenes';
+import { listarRecepciones } from '../services/recepcionService';
 import { useAuth } from './AuthContext';
 
 interface AppContextType {
@@ -11,6 +12,7 @@ interface AppContextType {
   movimientos: Movimiento[];
   almacenes: Almacen[];
   stockAlmacen: StockAlmacen[];
+  recepciones: Recepcion[];
   loading: boolean;
   error: string | null;
   loadData: () => Promise<void>;
@@ -32,6 +34,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
   const [stockAlmacen, setStockAlmacen] = useState<StockAlmacen[]>([]);
+  const [recepciones, setRecepciones] = useState<Recepcion[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
@@ -40,17 +43,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (!user) {
       setMateriasPrimas([]);
       setMovimientos([]);
+      setRecepciones([]);
       return;
     }
 
     setLoading(true);
     setError(null);
     try {
-      const [mpData, movData, almData, stockData] = await Promise.all([
+      const [mpData, movData, almData, stockData, recData] = await Promise.all([
         materiaPrimaService.getMateriasPrimas(),
         movimientosService.getMovimientos(),
         supabase.from('almacenes').select('*'),
-        supabase.from('stock_almacen').select('*')
+        supabase.from('stock_almacen').select('*'),
+        listarRecepciones()
       ]);
 
       if (almData.error) throw almData.error;
@@ -60,6 +65,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setMovimientos(movData);
       setAlmacenes(almData.data || []);
       setStockAlmacen(stockData.data || []);
+      setRecepciones(recData);
       setInitialLoadDone(true);
     } catch (err: any) {
       console.error('Error loading data:', err);
@@ -204,6 +210,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       movimientos,
       almacenes,
       stockAlmacen,
+      recepciones,
       loading: isAppDataLoading,
       error,
       loadData,

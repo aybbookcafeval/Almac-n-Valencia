@@ -5,7 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { format } from 'date-fns';
 
 export default function Dashboard() {
-  const { materiasPrimas, movimientos, loading } = useAppContext();
+  const { materiasPrimas, movimientos, recepciones, loading } = useAppContext();
 
   if (loading) {
     return <div className="flex items-center justify-center h-full">Cargando...</div>;
@@ -14,6 +14,7 @@ export default function Dashboard() {
   const lowStock = materiasPrimas.filter(mp => mp.stock < mp.min_stock);
   const overStock = materiasPrimas.filter(mp => mp.stock > mp.max_stock);
   const recentMovs = movimientos.slice(0, 5);
+  const pendingReceptions = recepciones.filter(r => r.estado === 'Recibido');
 
   const chartData = materiasPrimas.map(mp => ({
     name: mp.nombre,
@@ -25,7 +26,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
@@ -72,6 +73,18 @@ export default function Dashboard() {
             </div>
             <div className="h-12 w-12 bg-green-50 rounded-full flex items-center justify-center">
               <ArrowRightLeft className="h-6 w-6 text-green-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-500">Recepciones Pendientes</p>
+              <p className="text-3xl font-bold text-orange-600 mt-2">{pendingReceptions.length}</p>
+            </div>
+            <div className="h-12 w-12 bg-orange-50 rounded-full flex items-center justify-center">
+              <ArrowDownToLine className="h-6 w-6 text-orange-600" />
             </div>
           </div>
         </div>

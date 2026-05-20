@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Package, GitCompare, ArrowRightLeft, Menu, X, LogOut, Warehouse } from 'lucide-react';
+import { LayoutDashboard, Package, GitCompare, ArrowRightLeft, Menu, X, LogOut, Warehouse, ArrowDownToLine } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../context/AuthContext';
 
@@ -12,6 +12,7 @@ export const Layout = () => {
   const navItems = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard },
     { name: 'Inventario', path: '/inventario', icon: Package },
+    { name: 'Recepcion', path: '/recepcion', icon: ArrowDownToLine },
     { name: 'Movimientos', path: '/movimientos', icon: GitCompare },
     { name: 'Transferencias', path: '/transferencias', icon: ArrowRightLeft },
     { name: 'Almacenes', path: '/almacenes', icon: Warehouse },

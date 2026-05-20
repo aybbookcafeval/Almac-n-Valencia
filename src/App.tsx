@@ -14,6 +14,7 @@ import Inventario from './pages/Inventario';
 import Movimientos from './pages/Movimientos';
 import Almacenes from './pages/Almacenes';
 import Transferencias from './pages/Transferencias';
+import Recepcion from './pages/Recepcion';
 import LoginPage from './pages/LoginPage';
 
 import { useAppContext } from './context/AppContext';
@@ -52,6 +53,7 @@ export default function App() {
               <Route path="movimientos" element={<Movimientos />} />
               <Route path="almacenes" element={<Almacenes />} />
               <Route path="transferencias" element={<Transferencias />} />
+              <Route path="recepcion" element={<Recepcion />} />
             </Route>
           </Routes>
         </BrowserRouter>

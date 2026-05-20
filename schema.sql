@@ -52,12 +52,42 @@ create table if not exists movimientos (
   created_at timestamp with time zone default now()
 );
 
--- Enable RLS
-alter table profiles enable row level security;
-alter table almacenes enable row level security;
-alter table materia_prima enable row level security;
-alter table stock_almacen enable row level security;
-alter table movimientos enable row level security;
+-- Table: recepciones
+create table if not exists recepciones (
+  id uuid not null default uuid_generate_v4() primary key,
+  proveedor text,
+  factura_nro text,
+  almacen_destino_id uuid references almacenes(id),
+  estado text not null check (estado in ('Recibido', 'Aprobado', 'MANUAL_SEARCH_REQUIRED')) default 'Recibido',
+  imagen_url text,
+  notas text,
+  created_at timestamp with time zone default now()
+);
+
+-- Table: recepcion_items
+create table if not exists recepcion_items (
+  id uuid not null default uuid_generate_v4() primary key,
+  recepcion_id uuid not null references recepciones(id) on delete cascade,
+  producto_id uuid references materia_prima(id),
+  nombre_factura text not null,
+  datos_json jsonb not null,
+  peso_balanza numeric not null,
+  match_status text not null check (match_status in ('OK', 'MANUAL_SEARCH_REQUIRED')),
+  imagen_url text
+);
+
+-- Habilitar RLS
+alter table recepciones enable row level security;
+alter table recepcion_items enable row level security;
+
+-- Políticas para recepciones y recepcion_items
+create policy "Authenticated users can read recepciones" on recepciones for select using (auth.role() = 'authenticated');
+create policy "Authenticated users can insert recepciones" on recepciones for insert with check (auth.role() = 'authenticated');
+create policy "Authenticated users can update recepciones" on recepciones for update using (auth.role() = 'authenticated');
+
+create policy "Authenticated users can read recepcion_items" on recepcion_items for select using (auth.role() = 'authenticated');
+create policy "Authenticated users can insert recepcion_items" on recepcion_items for insert with check (auth.role() = 'authenticated');
+create policy "Authenticated users can update recepcion_items" on recepcion_items for update using (auth.role() = 'authenticated');
 
 -- Function to handle new user signup
 create or replace function public.handle_new_user()

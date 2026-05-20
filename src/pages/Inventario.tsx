@@ -1,15 +1,17 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Edit2, Trash2, X, Filter, FileText, Printer, Calendar } from 'lucide-react';
-import { MateriaPrimaFormData } from '../types';
+import { Plus, Edit2, Trash2, X, Filter, FileText, Printer, Calendar, PlusCircle } from 'lucide-react';
+import { MateriaPrimaFormData, MovimientoFormData } from '../types';
 import { format, isWithinInterval, startOfDay, endOfDay, parseISO, subDays } from 'date-fns';
 import { cn } from '../lib/utils';
+import * as movimientosService from '../services/movimientos';
 
 export default function Inventario() {
-  const { materiasPrimas, movimientos, almacenes, stockAlmacen, addMateriaPrima, editMateriaPrima, removeMateriaPrima } = useAppContext();
+  const { materiasPrimas, movimientos, almacenes, stockAlmacen, addMateriaPrima, editMateriaPrima, removeMateriaPrima, loadData } = useAppContext();
   const { isAdmin, profile } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isStockModalOpen, setIsStockModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isReportMode, setIsReportMode] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -27,6 +29,15 @@ export default function Inventario() {
     unidad_medida: 'kg',
     min_stock: 0,
     max_stock: 0,
+  });
+
+  const [stockFormData, setStockFormData] = useState<MovimientoFormData>({
+    materia_prima_id: '',
+    almacen_id: '',
+    tipo: 'entrada',
+    cantidad: 0,
+    unidad_medida: 'kg',
+    comentario: '',
   });
 
   const handleOpenModal = (mp?: any) => {
@@ -48,6 +59,33 @@ export default function Inventario() {
       });
     }
     setIsModalOpen(true);
+  };
+
+  const handleOpenStockModal = (mp: any) => {
+    setStockFormData({
+        materia_prima_id: mp.id,
+        almacen_id: almacenes[0]?.id || '',
+        tipo: 'entrada',
+        cantidad: 0,
+        unidad_medida: mp.unidad_medida,
+        comentario: '',
+    });
+    setIsStockModalOpen(true);
+  };
+
+  const handleSubmitStock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+        setIsSubmitting(true);
+        await movimientosService.createMovimiento(stockFormData);
+        await loadData(); // Refresh app state
+        setIsStockModalOpen(false);
+    } catch (error) {
+        console.error(error);
+        alert('Error al agregar stock');
+    } finally {
+        setIsSubmitting(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -407,6 +445,9 @@ export default function Inventario() {
                         <button onClick={() => handleOpenModal(mp)} className="text-blue-600 hover:text-blue-900 mr-4">
                           <Edit2 size={18} />
                         </button>
+                        <button onClick={() => handleOpenStockModal(mp)} className="text-green-600 hover:text-green-900 mr-4" title="Agregar Stock">
+                          <PlusCircle size={18} />
+                        </button>
                         {isAdmin && (
                           <button onClick={() => handleDelete(mp.id)} className="text-red-600 hover:text-red-900">
                             <Trash2 size={18} />
@@ -448,7 +489,7 @@ export default function Inventario() {
         )}
       </div>
 
-      {/* Modal */}
+      {/* Product Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
@@ -530,6 +571,84 @@ export default function Inventario() {
                     </>
                   ) : (
                     'Guardar'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Stock Modal */}
+      {isStockModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-medium text-gray-900">Agregar Stock</h3>
+              <button onClick={() => setIsStockModalOpen(false)} className="text-gray-400 hover:text-gray-500">
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleSubmitStock} className="space-y-4">
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Almacén</label>
+                <select
+                  required
+                  value={stockFormData.almacen_id}
+                  onChange={(e) => setStockFormData({ ...stockFormData, almacen_id: e.target.value })}
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-black focus:outline-none focus:ring-1 focus:ring-black sm:text-sm"
+                >
+                  {almacenes.map(alm => (
+                    <option key={alm.id} value={alm.id}>{alm.nombre}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Cantidad</label>
+                <input
+                  type="number"
+                  required
+                  min="0"
+                  step="0.001"
+                  value={stockFormData.cantidad}
+                  onChange={(e) => setStockFormData({ ...stockFormData, cantidad: Number(e.target.value) })}
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-black focus:outline-none focus:ring-1 focus:ring-black sm:text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Comentario</label>
+                <input
+                  type="text"
+                  value={stockFormData.comentario}
+                  onChange={(e) => setStockFormData({ ...stockFormData, comentario: e.target.value })}
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-black focus:outline-none focus:ring-1 focus:ring-black sm:text-sm"
+                />
+              </div>
+
+              <div className="pt-4 flex justify-end space-x-3">
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => setIsStockModalOpen(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 text-sm font-medium text-white bg-black border border-transparent rounded-md hover:bg-gray-800 disabled:opacity-50 flex items-center"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Guardando...
+                    </>
+                  ) : (
+                    'Agregar'
                   )}
                 </button>
               </div>
