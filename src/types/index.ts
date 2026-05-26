@@ -75,14 +75,3 @@ export type TransferenciaFormData = {
   comentario?: string;
   imagen_url?: string;
 };
-
-export type Recepcion = {
-  id: string;
-  proveedor: string;
-  factura_nro: string;
-  estado: string;
-  imagen_url?: string;
-  notas?: string;
-  created_at: string;
-  recepcion_items?: any[];
-};
