@@ -183,8 +183,20 @@ export async function obtenerDetalleRecepcion(id: string) {
     return recepcion;
 }
 
-export async function aprobarRecepcion(id: string, estado: string, notas: string) {
-    console.log('Service: Aprobar recepcion', { id, estado, notas });
+export async function aprobarRecepcion(id: string, estado: string, notas: string, almacen_id: string = '', updatedItems?: any[]) {
+    console.log('Service: Aprobar recepcion', { id, estado, notas, almacen_id });
+    
+    if (updatedItems && updatedItems.length > 0) {
+        for (const item of updatedItems) {
+            if (item.id) {
+                await supabase.from('recepcion_items').update({
+                    producto_id: item.producto_id || null,
+                    datos_json: item.datos_json
+                }).eq('id', item.id);
+            }
+        }
+    }
+
     const { data, error } = await supabase
         .from('recepciones')
         .update({ estado, notas })
@@ -195,6 +207,58 @@ export async function aprobarRecepcion(id: string, estado: string, notas: string
         console.error('Service: Error updating recepcion', error);
         throw error;
     }
+
+    if (estado === 'Aprobado' && almacen_id) {
+        const { data: items, error: itemsError } = await supabase
+            .from('recepcion_items')
+            .select('*')
+            .eq('recepcion_id', id);
+
+        if (!itemsError && items) {
+            const bundle_id = 'rec_' + id;
+            const { createMovimiento } = await import('./movimientos');
+            for (const item of items) {
+                if (item.producto_id) {
+                    let cantidadStr = "";
+                    if (item.datos_json && typeof item.datos_json === 'object') {
+                        cantidadStr = item.datos_json.cantidad;
+                    }
+                    let parsedCantidad = parseFloat(cantidadStr);
+                    
+                    if (isNaN(parsedCantidad) || parsedCantidad <= 0) {
+                        parsedCantidad = parseFloat(item.peso_balanza);
+                    }
+
+                    if (!isNaN(parsedCantidad) && parsedCantidad > 0) {
+                        // Intentamos obtener la unidad de medida original
+                        let unidad_medida = 'kg';
+                        const { data: mpData } = await supabase
+                            .from('materias_primas')
+                            .select('unidad_medida')
+                            .eq('id', item.producto_id)
+                            .single();
+                            
+                        if (mpData) unidad_medida = mpData.unidad_medida;
+
+                        try {
+                            await createMovimiento({
+                                materia_prima_id: item.producto_id,
+                                almacen_id: almacen_id,
+                                tipo: 'entrada',
+                                cantidad: parsedCantidad,
+                                unidad_medida: unidad_medida,
+                                bundle_id: bundle_id,
+                                comentario: 'Recepción FC: ' + (data[0]?.factura_nro || '')
+                            });
+                        } catch(e) {
+                            console.error('Failed to create movement for item', item.id, e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     console.log('Service: Update successful', data);
     return data;
 }

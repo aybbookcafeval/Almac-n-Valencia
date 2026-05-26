@@ -19,7 +19,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = async (userId: string) => {
+  const fetchProfile = async (userId: string, email?: string) => {
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -27,11 +27,49 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         .eq('id', userId)
         .single();
       
-      if (error) throw error;
+      if (error) {
+        if (error.code === 'PGRST116') {
+          console.log('Profile not found, auto-creating profile for:', userId, email);
+          const role = (email === 'aybbookcafeval@gmail.com' || email?.toLowerCase().includes('admin')) ? 'admin' : 'user';
+          const newProfile = {
+            id: userId,
+            email: email || '',
+            role: role
+          };
+          
+          const { data: insertedData, error: insertError } = await supabase
+            .from('profiles')
+            .insert([newProfile])
+            .select('*')
+            .single();
+            
+          if (insertError) {
+            console.error('Error auto-creating profile:', insertError);
+            setProfile({
+              id: userId,
+              email: email || '',
+              role: role,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            });
+            return;
+          }
+          
+          setProfile(insertedData);
+          return;
+        }
+        throw error;
+      }
       setProfile(data);
     } catch (err) {
       console.error('Error fetching profile:', err);
-      setProfile(null);
+      setProfile({
+        id: userId,
+        email: email || '',
+        role: (email === 'aybbookcafeval@gmail.com' || email?.toLowerCase().includes('admin')) ? 'admin' : 'user',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
     }
   };
 
@@ -40,7 +78,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       if (currentUser) {
-        fetchProfile(currentUser.id).finally(() => setLoading(false));
+        fetchProfile(currentUser.id, currentUser.email).finally(() => setLoading(false));
       } else {
         setLoading(false);
       }
@@ -50,7 +88,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       if (currentUser) {
-        fetchProfile(currentUser.id).finally(() => setLoading(false));
+        fetchProfile(currentUser.id, currentUser.email).finally(() => setLoading(false));
       } else {
         setProfile(null);
         setLoading(false);

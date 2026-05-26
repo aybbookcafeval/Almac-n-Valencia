@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { Camera, AlertCircle, Check } from 'lucide-react';
 import { analizarFactura, guardarRecepcion, listarRecepciones, obtenerDetalleRecepcion, aprobarRecepcion } from '../services/recepcionService';
 import { cn } from '../lib/utils';
+import { useAppContext } from '../context/AppContext';
 
 export default function Recepcion() {
+  const { almacenes, loadData, materiasPrimas } = useAppContext();
   const [file, setFile] = useState<File | null>(null);
   const [recepciones, setRecepciones] = useState<any[]>([]);
   const [recepcion, setRecepcion] = useState<any>(null);
@@ -12,6 +14,7 @@ export default function Recepcion() {
   const [confirming, setConfirming] = useState(false);
   const [editingRecepcion, setEditingRecepcion] = useState<any>(null);
   const [adminNotas, setAdminNotas] = useState('');
+  const [selectedAlmacen, setSelectedAlmacen] = useState<string>('');
 
   // Initialize editableItems when recepcion changes
   React.useEffect(() => {
@@ -80,14 +83,20 @@ export default function Recepcion() {
   };
 
   const handleApprove = async (id: string) => {
+    if (!selectedAlmacen) {
+        alert('Por favor selecciona un almacén en el que ingresar los productos.');
+        return;
+    }
     try {
-        console.log('Aprobando recepción', id, 'con notas:', adminNotas);
-        await aprobarRecepcion(id, 'Aprobado', adminNotas);
-        alert('Recepción aprobada');
+        console.log('Aprobando recepción', id, 'con notas:', adminNotas, 'almacen', selectedAlmacen);
+        await aprobarRecepcion(id, 'Aprobado', adminNotas, selectedAlmacen, editingRecepcion.recepcion_items);
+        alert('Recepción aprobada y productos cargados al almacén seleccionado.');
         setEditingRecepcion(null);
         setAdminNotas(''); // Clear notes
+        setSelectedAlmacen(''); // Clear selection
         const updatedList = await listarRecepciones();
         setRecepciones(updatedList);
+        await loadData(); // Update inventory stock
         console.log('Lista actualizada');
     } catch(e) { 
         console.error('Error al aprobar recepción:', e);
@@ -135,14 +144,59 @@ export default function Recepcion() {
                               )}
                               <div className="flex-1">
                                   <p className="font-semibold">{item.nombre_factura}</p>
-                                  <p className="text-sm">Cantidad: {item.datos_json.cantidad}</p>
-                                  <p className="text-sm font-medium text-orange-600">{item.match_status}</p>
+                                  <div className="flex items-center gap-2 mt-1">
+                                      <span className="text-sm">Cantidad:</span>
+                                      <input 
+                                          type="text" 
+                                          value={item.datos_json?.cantidad || ''} 
+                                          onChange={(e) => {
+                                              const newItems = [...editingRecepcion.recepcion_items];
+                                              newItems[idx] = { 
+                                                  ...newItems[idx], 
+                                                  datos_json: { ...newItems[idx].datos_json, cantidad: e.target.value } 
+                                              };
+                                              setEditingRecepcion({ ...editingRecepcion, recepcion_items: newItems });
+                                          }}
+                                          className="border rounded p-1 w-24 text-sm"
+                                          placeholder="Ej: 200g"
+                                      />
+                                  </div>
+                                  <select
+                                      value={item.producto_id || ''}
+                                      onChange={(e) => {
+                                          const newItems = [...editingRecepcion.recepcion_items];
+                                          newItems[idx] = { ...newItems[idx], producto_id: e.target.value };
+                                          setEditingRecepcion({ ...editingRecepcion, recepcion_items: newItems });
+                                      }}
+                                      className="border rounded p-1 w-full text-sm mt-2 focus:ring-1 focus:ring-black"
+                                  >
+                                      <option value="">-- Vincular Producto en Inventario --</option>
+                                      {materiasPrimas.map(mp => (
+                                          <option key={mp.id} value={mp.id}>{mp.nombre} (Stock: {mp.stock} {mp.unidad_medida})</option>
+                                      ))}
+                                  </select>
+                                  <p className="text-sm font-medium text-orange-600 mt-1">{item.match_status}</p>
                               </div>
                           </div>
                       ))}
                   </div>
                   
                   <textarea className="w-full border p-2 mb-4 rounded" placeholder="Notas del inspector" value={adminNotas} onChange={e => setAdminNotas(e.target.value)} />
+                  
+                  <div className="mb-6">
+                      <label className="block text-sm font-medium mb-2">Almacén de Ingreso (Obligatorio para aprobar)</label>
+                      <select 
+                          value={selectedAlmacen}
+                          onChange={e => setSelectedAlmacen(e.target.value)}
+                          className="w-full border p-2 rounded focus:ring-1 focus:ring-black"
+                      >
+                          <option value="">-- Selecciona el Almacén --</option>
+                          {almacenes.map(a => (
+                              <option key={a.id} value={a.id}>{a.nombre}</option>
+                          ))}
+                      </select>
+                  </div>
+
                   <div className="flex gap-2 justify-end">
                       <button onClick={() => setEditingRecepcion(null)} className="bg-gray-400 text-white px-4 py-2 rounded">Cerrar</button>
                       <button onClick={() => handleApprove(editingRecepcion.id)} className="bg-green-600 text-white px-4 py-2 rounded">Aprobar</button>
@@ -188,15 +242,27 @@ export default function Recepcion() {
                                 ) : (
                                     <p className="font-semibold">{item.nombre_factura}</p>
                                 )}
-                                <div className="flex items-center gap-2 mt-2">
-                                    <span className="text-sm">Cantidad:</span>
-                                    <input 
-                                        type="text" 
-                                        value={item.cantidad_manual} 
-                                        onChange={(e) => updateItem(idx, 'cantidad_manual', e.target.value)}
-                                        className="border rounded p-1 w-24 text-sm"
-                                        placeholder="Ej: 200g"
-                                    />
+                                <div className="flex flex-col gap-2 mt-2">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm">Cantidad:</span>
+                                        <input 
+                                            type="text" 
+                                            value={item.cantidad_manual} 
+                                            onChange={(e) => updateItem(idx, 'cantidad_manual', e.target.value)}
+                                            className="border rounded p-1 w-24 text-sm"
+                                            placeholder="Ej: 200g"
+                                        />
+                                    </div>
+                                    <select
+                                        value={item.producto_id || ''}
+                                        onChange={(e) => updateItem(idx, 'producto_id', e.target.value)}
+                                        className="border rounded p-1 w-full text-sm mt-1 focus:ring-1 focus:ring-black"
+                                    >
+                                        <option value="">-- Vincular Producto en Inventario --</option>
+                                        {materiasPrimas.map(mp => (
+                                            <option key={mp.id} value={mp.id}>{mp.nombre} (Stock: {mp.stock} {mp.unidad_medida})</option>
+                                        ))}
+                                    </select>
                                 </div>
                                 <p className="text-sm font-medium text-orange-600 mt-1">{item.verificacion.match_status}</p>
                             </div>
