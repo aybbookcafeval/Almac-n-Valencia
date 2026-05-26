@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { User } from '@supabase/supabase-js';
 import { Profile } from '../types';
@@ -19,7 +19,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const fetchingIdRef = useRef<string | null>(null);
+  const currentUserIdRef = useRef<string | null>(null);
+
   const fetchProfile = async (userId: string, email?: string) => {
+    if (fetchingIdRef.current === userId) {
+      console.log('Profile fetch already in flight for:', userId);
+      return;
+    }
+    fetchingIdRef.current = userId;
+
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -70,33 +79,75 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       });
+    } finally {
+      if (fetchingIdRef.current === userId) {
+        fetchingIdRef.current = null;
+      }
     }
   };
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    let active = true;
+
+    const initializeAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!active) return;
+
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+        currentUserIdRef.current = currentUser?.id ?? null;
+
+        if (currentUser) {
+          await fetchProfile(currentUser.id, currentUser.email);
+        }
+      } catch (err) {
+        console.error('Error during initial session check:', err);
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    initializeAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!active) return;
+      
       const currentUser = session?.user ?? null;
+      const prevUserId = currentUserIdRef.current;
+      currentUserIdRef.current = currentUser?.id ?? null;
+      
       setUser(currentUser);
+      
       if (currentUser) {
-        fetchProfile(currentUser.id, currentUser.email).finally(() => setLoading(false));
+        if (currentUser.id === prevUserId && profile) {
+          // If profile is already fetched, skip redundant loading triggers
+          setLoading(false);
+          return;
+        }
+        
+        try {
+          await fetchProfile(currentUser.id, currentUser.email);
+        } finally {
+          if (active) {
+            setLoading(false);
+          }
+        }
       } else {
-        setLoading(false);
+        if (active) {
+          setProfile(null);
+          setLoading(false);
+        }
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-      if (currentUser) {
-        fetchProfile(currentUser.id, currentUser.email).finally(() => setLoading(false));
-      } else {
-        setProfile(null);
-        setLoading(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, [profile]); // Include profile to allow checking its existence on subsequent auth states
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
