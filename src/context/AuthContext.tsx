@@ -35,29 +35,45 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const lastFetchedUserId = React.useRef<string | null>(null);
+
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    let mounted = true;
+
+    const handleSession = (session: any) => {
+      if (!mounted) return;
       const currentUser = session?.user ?? null;
-      setUser(currentUser);
+      setUser(prev => prev?.id === currentUser?.id ? prev : currentUser);
+      
       if (currentUser) {
-        fetchProfile(currentUser.id).finally(() => setLoading(false));
+        if (lastFetchedUserId.current !== currentUser.id) {
+          lastFetchedUserId.current = currentUser.id;
+          fetchProfile(currentUser.id).finally(() => {
+            if (mounted) setLoading(false);
+          });
+        } else {
+           // Already fetched or fetching
+           if (mounted) setLoading(false);
+        }
       } else {
-        setLoading(false);
+        lastFetchedUserId.current = null;
+        setProfile(null);
+        if (mounted) setLoading(false);
       }
+    };
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      handleSession(session);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-      if (currentUser) {
-        fetchProfile(currentUser.id).finally(() => setLoading(false));
-      } else {
-        setProfile(null);
-        setLoading(false);
-      }
+      handleSession(session);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {

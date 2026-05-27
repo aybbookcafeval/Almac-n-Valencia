@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { useAppContext } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { Plus, ArrowDownToLine, ArrowUpFromLine, X, Image as ImageIcon, Camera, Calendar, Printer, FileText } from 'lucide-react';
 import { Movimiento, MovimientoBundleFormData } from '../types';
 import { format, isWithinInterval, startOfDay, endOfDay, parseISO, subDays } from 'date-fns';
@@ -10,6 +11,8 @@ import { cn } from '../lib/utils';
 
 export default function Movimientos() {
   const { movimientos, materiasPrimas, almacenes, stockAlmacen, addMovimiento } = useAppContext();
+  const { profile, isAdmin } = useAuth();
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -32,6 +35,18 @@ export default function Movimientos() {
   });
   const [file, setFile] = useState<File | null>(null);
   const [selectedBundle, setSelectedBundle] = useState<Movimiento[] | null>(null);
+
+  const isSalidaDisabled = useMemo(() => {
+    const selectedAlmacen = almacenes.find(a => a.id === formData.almacen_id);
+    if (!selectedAlmacen) return false;
+    
+    if (profile?.role === 'user') {
+      const isAlmacenMZ = selectedAlmacen.nombre.includes('MZ');
+      return !isAlmacenMZ;
+    }
+    
+    return selectedAlmacen.nombre === 'Principal La Vela';
+  }, [almacenes, formData.almacen_id, profile?.role]);
 
   const filteredMovimientos = useMemo(() => {
     const start = startOfDay(parseISO(startDate));
@@ -104,15 +119,24 @@ export default function Movimientos() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.almacen_id) {
+    const selectedAlm = almacenes.find(a => a.id === formData.almacen_id);
+    if (!selectedAlm) {
       toast.error('Debe seleccionar un almacén');
       return;
     }
-    const isPrincipalLaVela = almacenes.find(a => a.id === formData.almacen_id)?.nombre === 'Principal La Vela';
-    if (isPrincipalLaVela && formData.tipo === 'salida') {
-      toast.error('No se pueden registrar salidas en el almacén Principal La Vela');
+    
+    let isSalidaRestricted = false;
+    if (profile?.role === 'user') {
+      isSalidaRestricted = !selectedAlm.nombre.includes('MZ');
+    } else {
+      isSalidaRestricted = selectedAlm.nombre === 'Principal La Vela';
+    }
+
+    if (isSalidaRestricted && formData.tipo === 'salida') {
+      toast.error('Su rol no tiene permisos para realizar salidas en este almacén');
       return;
     }
+
     if (formData.items.some(d => !d.materia_prima_id || d.cantidad <= 0)) {
       toast.error('Todos los productos deben tener un producto seleccionado y una cantidad mayor a 0');
       return;
@@ -553,11 +577,21 @@ export default function Movimientos() {
                     value={formData.almacen_id}
                     onChange={(e) => {
                       const newAlmacenId = e.target.value;
-                      const isNewPrincipal = almacenes.find(a => a.id === newAlmacenId)?.nombre === 'Principal La Vela';
+                      const selectedAlm = almacenes.find(a => a.id === newAlmacenId);
+                      
+                      let shouldResetToEntrada = false;
+                      if (selectedAlm) {
+                        if (profile?.role === 'user') {
+                          shouldResetToEntrada = !selectedAlm.nombre.includes('MZ');
+                        } else {
+                          shouldResetToEntrada = selectedAlm.nombre === 'Principal La Vela';
+                        }
+                      }
+                      
                       setFormData({
                         ...formData,
                         almacen_id: newAlmacenId,
-                        tipo: isNewPrincipal ? 'entrada' : formData.tipo
+                        tipo: shouldResetToEntrada && formData.tipo === 'salida' ? 'entrada' : formData.tipo
                       });
                     }}
                     className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-black focus:outline-none focus:ring-1 focus:ring-black sm:text-sm"
@@ -589,11 +623,11 @@ export default function Movimientos() {
                         className="form-radio text-black"
                         name="tipo"
                         value="salida"
-                        disabled={almacenes.find(a => a.id === formData.almacen_id)?.nombre === 'Principal La Vela'}
+                        disabled={isSalidaDisabled}
                         checked={formData.tipo === 'salida'}
                         onChange={() => setFormData({ ...formData, tipo: 'salida' })}
                       />
-                      <span className={cn("ml-2 text-sm", almacenes.find(a => a.id === formData.almacen_id)?.nombre === 'Principal La Vela' ? "text-gray-400" : "text-gray-700")}>Salida</span>
+                      <span className={cn("ml-2 text-sm", isSalidaDisabled ? "text-gray-400" : "text-gray-700")}>Salida</span>
                     </label>
                   </div>
                 </div>

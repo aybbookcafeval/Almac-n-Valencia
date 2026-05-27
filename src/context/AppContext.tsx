@@ -39,51 +39,64 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [error, setError] = useState<string | null>(null);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
 
+  const loadDataPromiseRef = React.useRef<Promise<void> | null>(null);
+
   const loadData = async () => {
-    if (!user) {
+    if (!user?.id) {
       setMateriasPrimas([]);
       setMovimientos([]);
       setRecepciones([]);
       return;
     }
 
+    if (loadDataPromiseRef.current) {
+      return loadDataPromiseRef.current;
+    }
+
     setLoading(true);
     setError(null);
-    try {
-      const [mpData, movData, almData, stockData, recData] = await Promise.all([
-        materiaPrimaService.getMateriasPrimas(),
-        movimientosService.getMovimientos(),
-        supabase.from('almacenes').select('*'),
-        supabase.from('stock_almacen').select('*'),
-        listarRecepciones()
-      ]);
+    
+    const promise = (async () => {
+      try {
+        const [mpData, movData, almData, stockData, recData] = await Promise.all([
+          materiaPrimaService.getMateriasPrimas(),
+          movimientosService.getMovimientos(),
+          supabase.from('almacenes').select('*'),
+          supabase.from('stock_almacen').select('*'),
+          listarRecepciones()
+        ]);
 
-      if (almData.error) throw almData.error;
-      if (stockData.error) throw stockData.error;
+        if (almData.error) throw almData.error;
+        if (stockData.error) throw stockData.error;
 
-      setMateriasPrimas(mpData);
-      setMovimientos(movData);
-      setAlmacenes(almData.data || []);
-      setStockAlmacen(stockData.data || []);
-      setRecepciones(recData);
-      setInitialLoadDone(true);
-    } catch (err: any) {
-      console.error('Error loading data:', err);
-      setError(err.message || 'Error al cargar los datos');
-    } finally {
-      setLoading(false);
-    }
+        setMateriasPrimas(mpData);
+        setMovimientos(movData);
+        setAlmacenes(almData.data || []);
+        setStockAlmacen(stockData.data || []);
+        setRecepciones(recData);
+        setInitialLoadDone(true);
+      } catch (err: any) {
+        console.error('Error loading data:', err);
+        setError(err.message || 'Error al cargar los datos');
+      } finally {
+        setLoading(false);
+        loadDataPromiseRef.current = null;
+      }
+    })();
+
+    loadDataPromiseRef.current = promise;
+    return promise;
   };
 
   useEffect(() => {
-    if (user) {
+    if (user?.id) {
       loadData();
     } else if (!authLoading) {
       setMateriasPrimas([]);
       setMovimientos([]);
       setInitialLoadDone(false);
     }
-  }, [user, authLoading]);
+  }, [user?.id, authLoading]);
 
   const isAppDataLoading = (authLoading || (user && !initialLoadDone && loading));
 
