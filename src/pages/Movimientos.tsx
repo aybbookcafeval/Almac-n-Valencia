@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
-import { Plus, ArrowDownToLine, ArrowUpFromLine, X, Image as ImageIcon, Camera, Calendar, Printer, FileText } from 'lucide-react';
+import { Plus, ArrowDownToLine, ArrowUpFromLine, X, Image as ImageIcon, Camera, Calendar, Printer, FileText, Share2, MessageCircle } from 'lucide-react';
 import { Movimiento, MovimientoBundleFormData } from '../types';
 import { format, isWithinInterval, startOfDay, endOfDay, parseISO, subDays } from 'date-fns';
 import { CameraCapture } from '../components/CameraCapture';
@@ -220,6 +220,89 @@ export default function Movimientos() {
     document.body.removeChild(link);
   };
 
+  const handleShareWhatsAppList = () => {
+    // Generate text for the current visible items
+    let text = `*Resumen de Movimientos*\n`;
+    text += `Periodo: ${format(parseISO(startDate), 'dd/MM/yyyy')} al ${format(parseISO(endDate), 'dd/MM/yyyy')}\n`;
+    const alm = filterAlmacen === 'todos' ? 'Todos' : almacenes.find(a => a.id === filterAlmacen)?.nombre;
+    text += `Almacén: ${alm}\n\n`;
+
+    // Limit to latest 30 movements to avoid URL length limits
+    const itemsToExport = paginatedMovimientos.slice(0, 30);
+    
+    itemsToExport.forEach(bundle => {
+        const firstMov = bundle[0];
+        const isTransfer = bundle.length >= 2 && bundle.some(m => m.tipo === 'entrada') && bundle.some(m => m.tipo === 'salida');
+        const date = format(new Date(firstMov.fecha), 'dd/MM/yyyy HH:mm');
+        const m = bundle[0];
+        const almacenStr = isTransfer ? 'Transferencia' : (almacenes.find(a => a.id === m.almacen_id)?.nombre || 'Desconocido');
+        const tipo = isTransfer ? 'Transferencia' : m.tipo;
+        const products = bundle.map(mov => {
+          const mp = materiasPrimas.find(m => m.id === mov.materia_prima_id);
+          return `${mp?.nombre}: ${mov.cantidad}${mov.unidad_medida}`;
+        }).join(', ');
+        
+        text += `- ${date} | ${tipo} | ${almacenStr} | ${products}\n`;
+    });
+    
+    if (paginatedMovimientos.length > 30) {
+        text += `\n...y ${paginatedMovimientos.length - 30} más.`;
+    }
+
+    const encodedText = encodeURIComponent(text);
+    window.open(`https://wa.me/?text=${encodedText}`, '_blank');
+  };
+
+  const handleShareWhatsApp = (bundle: Movimiento[]) => {
+    if (!bundle || bundle.length === 0) return;
+    
+    const isTransfer = bundle.length >= 2 && bundle.some(m => m.tipo === 'entrada') && bundle.some(m => m.tipo === 'salida');
+    const salida = bundle.find(m => m.tipo === 'salida');
+    const entrada = bundle.find(m => m.tipo === 'entrada');
+    const almacenOrigen = almacenes.find(a => a.id === salida?.almacen_id)?.nombre || 'Desconocido';
+    const almacenDestino = almacenes.find(a => a.id === entrada?.almacen_id)?.nombre || 'Desconocido';
+    
+    let text = `*Detalle de Movimiento*\n`;
+    text += `Fecha: ${format(new Date(bundle[0].fecha), 'dd/MM/yyyy HH:mm')}\n`;
+    
+    if (isTransfer) {
+      text += `Tipo: Transferencia\n`;
+      text += `Origen: ${almacenOrigen}\n`;
+      text += `Destino: ${almacenDestino}\n`;
+    } else {
+      text += `Tipo: ${bundle[0].tipo === 'entrada' ? 'Entrada' : 'Salida'}\n`;
+      text += `Almacén: ${almacenes.find(a => a.id === bundle[0].almacen_id)?.nombre || 'Desconocido'}\n`;
+    }
+    
+    if (bundle[0].comentario) {
+      text += `Comentario: ${bundle[0].comentario}\n`;
+    }
+    
+    text += `\n*Productos:*\n`;
+    
+    const grouped = bundle.reduce<{ [key: string]: Movimiento }>((acc, mov: Movimiento) => {
+      if (mov.tipo === 'salida' || !isTransfer) {
+        if (!acc[mov.materia_prima_id]) {
+          acc[mov.materia_prima_id] = { ...mov, cantidad: 0 };
+        }
+        acc[mov.materia_prima_id].cantidad += mov.cantidad;
+      }
+      return acc;
+    }, {});
+    
+    Object.values(grouped).forEach((mov: Movimiento) => {
+      const mp = materiasPrimas.find(m => m.id === mov.materia_prima_id);
+      text += `- ${mp?.nombre || 'Desconocido'}: ${mov.cantidad} ${mov.unidad_medida}\n`;
+    });
+    
+    if (bundle[0].imagen_url) {
+        text += `\n*Evidencia:* ${bundle[0].imagen_url}\n`;
+    }
+
+    const encodedText = encodeURIComponent(text);
+    window.open(`https://wa.me/?text=${encodedText}`, '_blank');
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 print:hidden">
@@ -238,6 +321,13 @@ export default function Movimientos() {
           >
             <Printer size={18} className="mr-2" />
             Imprimir
+          </button>
+          <button
+            onClick={handleShareWhatsAppList}
+            className="flex items-center justify-center px-4 py-2 bg-white text-green-600 border border-green-200 rounded-md hover:bg-green-50 transition-colors text-sm font-medium"
+          >
+            <MessageCircle size={18} className="mr-2" />
+            <span className="hidden xs:inline">WhatsApp</span>
           </button>
           <button
             onClick={handleOpenModal}
@@ -449,9 +539,19 @@ export default function Movimientos() {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col">
             <div className="flex justify-between items-center p-6 border-b">
               <h3 className="text-lg font-medium text-gray-900">Detalle del Movimiento</h3>
-              <button onClick={() => setSelectedBundle(null)} className="text-gray-400 hover:text-gray-500">
-                <X size={24} />
-              </button>
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => handleShareWhatsApp(selectedBundle)} 
+                  className="text-green-600 hover:text-green-700 flex items-center bg-green-50 px-2 py-1 rounded transition-colors"
+                  title="Compartir por WhatsApp"
+                >
+                  <MessageCircle size={20} className="mr-1" />
+                  <span className="text-sm font-medium">Compartir</span>
+                </button>
+                <button onClick={() => setSelectedBundle(null)} className="text-gray-400 hover:text-gray-500">
+                  <X size={24} />
+                </button>
+              </div>
             </div>
             <div className="space-y-4 p-6 overflow-y-auto flex-1">
               <p className="text-sm text-gray-600">Fecha: {format(new Date(selectedBundle[0].fecha), 'dd/MM/yyyy HH:mm')}</p>
