@@ -293,7 +293,7 @@ export default function Inventario() {
             <Printer size={20} className="mr-2" />
             Imprimir Inventario
           </button>
-          {(isAdmin || profile?.role === 'user') && (
+          {isAdmin && (
             <button
               onClick={() => handleOpenModal()}
               className="flex items-center px-4 py-2 bg-black text-white rounded-md hover:bg-gray-800 transition-colors"
@@ -442,9 +442,11 @@ export default function Inventario() {
                     </td>
                     {(isAdmin || profile?.role === 'user') && (
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium print:hidden">
-                        <button onClick={() => handleOpenModal(mp)} className="text-blue-600 hover:text-blue-900 mr-4">
-                          <Edit2 size={18} />
-                        </button>
+                        {isAdmin && (
+                          <button onClick={() => handleOpenModal(mp)} className="text-blue-600 hover:text-blue-900 mr-4">
+                            <Edit2 size={18} />
+                          </button>
+                        )}
                         <button onClick={() => handleOpenStockModal(mp)} className="text-green-600 hover:text-green-900 mr-4" title="Agregar Stock">
                           <PlusCircle size={18} />
                         </button>

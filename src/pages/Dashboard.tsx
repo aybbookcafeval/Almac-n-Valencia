@@ -5,20 +5,27 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { format } from 'date-fns';
 
 export default function Dashboard() {
-  const { materiasPrimas, movimientos, recepciones, loading } = useAppContext();
+  const { materiasPrimas, movimientos, recepciones, stockAlmacen, loading } = useAppContext();
 
   if (loading) {
     return <div className="flex items-center justify-center h-full">Cargando...</div>;
   }
 
-  const lowStock = materiasPrimas.filter(mp => mp.stock < mp.min_stock);
-  const overStock = materiasPrimas.filter(mp => mp.stock > mp.max_stock);
+  const materiasPrimasWithStock = materiasPrimas.map(mp => {
+    const totalStock = stockAlmacen
+      .filter(s => s.materia_prima_id === mp.id)
+      .reduce((sum, current) => sum + current.stock, 0);
+    return { ...mp, stockCalculado: totalStock };
+  });
+
+  const lowStock = materiasPrimasWithStock.filter(mp => mp.stockCalculado < mp.min_stock);
+  const overStock = materiasPrimasWithStock.filter(mp => mp.stockCalculado > mp.max_stock);
   const recentMovs = movimientos.slice(0, 5);
   const pendingReceptions = recepciones.filter(r => r.estado === 'Recibido');
 
-  const chartData = materiasPrimas.map(mp => ({
+  const chartData = materiasPrimasWithStock.map(mp => ({
     name: mp.nombre,
-    stock: mp.stock,
+    stock: mp.stockCalculado,
     min: mp.min_stock,
     max: mp.max_stock
   }));

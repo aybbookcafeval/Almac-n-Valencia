@@ -62,6 +62,17 @@ export type MovimientoBundleFormData = {
   comentario?: string;
 };
 
+export type Recepcion = {
+  id: string;
+  proveedor: string;
+  nro_factura: string;
+  estado: string;
+  fecha_hora: string;
+  imagen_url?: string;
+  notas?: string;
+  created_at: string;
+};
+
 export type TransferenciaItem = {
   materia_prima_id: string;
   cantidad: number;
