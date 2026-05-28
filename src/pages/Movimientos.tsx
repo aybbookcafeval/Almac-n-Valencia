@@ -142,6 +142,18 @@ export default function Movimientos() {
       return;
     }
     
+    if (formData.tipo === 'salida') {
+      for (const item of formData.items) {
+        const stockRecord = stockAlmacen.find(s => s.materia_prima_id === item.materia_prima_id && s.almacen_id === formData.almacen_id);
+        const availableStock = stockRecord ? stockRecord.stock : 0;
+        if (item.cantidad > availableStock) {
+           const mp = materiasPrimas.find(m => m.id === item.materia_prima_id);
+           toast.error(`Stock insuficiente para ${mp?.nombre || 'el producto seleccionado'}. Stock disponible: ${availableStock} ${mp?.unidad_medida || ''}`);
+           return;
+        }
+      }
+    }
+    
     setIsConfirmModalOpen(true);
   };
 
