@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Camera, AlertCircle, Check } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Camera, AlertCircle, Check, MessageCircle, X } from 'lucide-react';
 import { analizarFactura, guardarRecepcion, listarRecepciones, obtenerDetalleRecepcion, aprobarRecepcion } from '../services/recepcionService';
 import { cn } from '../lib/utils';
 import { useAppContext } from '../context/AppContext';
@@ -13,6 +13,7 @@ export default function Recepcion() {
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [editingRecepcion, setEditingRecepcion] = useState<any>(null);
+  const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   const [adminNotas, setAdminNotas] = useState('');
   const [selectedAlmacen, setSelectedAlmacen] = useState<string>('');
 
@@ -105,6 +106,39 @@ export default function Recepcion() {
     }
   };
 
+  const handleShareWhatsApp = (recep: any) => {
+    if (!recep) return;
+    
+    let text = `*Recepción de Mercancía*\n`;
+    text += `Factura: ${recep.factura_nro}\n`;
+    text += `Proveedor: ${recep.proveedor}\n`;
+    text += `Estado: ${recep.estado}\n\n`;
+    
+    if (recep.notas) {
+      text += `Notas: ${recep.notas}\n\n`;
+    }
+    
+    text += `*Productos:*\n`;
+    
+    recep.recepcion_items?.forEach((item: any) => {
+      let mpName = "Desconocido";
+      if (item.producto_id) {
+          const mp = materiasPrimas.find(m => m.id === item.producto_id);
+          if (mp) mpName = mp.nombre;
+      } else {
+          mpName = item.nombre_factura;
+      }
+      text += `- ${mpName}: ${item.datos_json?.cantidad || ''}\n`;
+    });
+    
+    if (recep.imagen_url) {
+        text += `\n*Factura:* ${recep.imagen_url}\n`;
+    }
+
+    const encodedText = encodeURIComponent(text);
+    window.open(`https://wa.me/?text=${encodedText}`, '_blank');
+  };
+
   return (
     <div className="p-6">
       <h1 className="text-3xl font-bold mb-6">Recepción de Mercancía</h1>
@@ -127,12 +161,27 @@ export default function Recepcion() {
       {editingRecepcion && (
           <div className="fixed inset-0 bg-black/50 p-6 overflow-y-auto">
               <div className="bg-white p-6 rounded-lg max-w-4xl mx-auto">
-                  <h2 className="text-xl font-bold mb-4">Inspeccionar Recepción: {editingRecepcion.factura_nro}</h2>
+                  <div className="flex justify-between items-center mb-4">
+                      <h2 className="text-xl font-bold">Inspeccionar Recepción: {editingRecepcion.factura_nro}</h2>
+                      <button 
+                        onClick={() => handleShareWhatsApp(editingRecepcion)} 
+                        className="text-green-600 hover:text-green-700 flex items-center bg-green-50 px-3 py-1.5 rounded transition-colors"
+                        title="Compartir por WhatsApp"
+                      >
+                        <MessageCircle size={20} className="mr-2" />
+                        <span className="text-sm font-medium">Compartir</span>
+                      </button>
+                  </div>
                   
                   {editingRecepcion.imagen_url && (
                       <div className="mb-6">
                         <p className="font-semibold mb-2">Imagen de Factura</p>
-                        <img src={editingRecepcion.imagen_url} alt="Factura" className="w-full rounded-lg shadow-md" />
+                        <img 
+                          src={editingRecepcion.imagen_url} 
+                          alt="Factura" 
+                          className="w-full rounded-lg shadow-md cursor-pointer hover:opacity-90 transition-opacity" 
+                          onClick={() => setFullScreenImage(editingRecepcion.imagen_url)}
+                        />
                       </div>
                   )}
 
@@ -141,7 +190,12 @@ export default function Recepcion() {
                       {editingRecepcion.recepcion_items.map((item: any, idx: number) => (
                           <div key={idx} className="border p-4 rounded-lg flex items-start gap-4">
                               {item.imagen_url && (
-                                  <img src={item.imagen_url} alt="Item" className="w-24 h-24 rounded object-cover" />
+                                  <img 
+                                    src={item.imagen_url} 
+                                    alt="Item" 
+                                    className="w-24 h-24 rounded object-cover cursor-pointer hover:opacity-80 transition-opacity" 
+                                    onClick={() => setFullScreenImage(item.imagen_url)}
+                                  />
                               )}
                               <div className="flex-1">
                                   <p className="font-semibold">{item.nombre_factura}</p>
@@ -240,7 +294,12 @@ export default function Recepcion() {
                 <p>Proveedor: {recepcion.proveedor}</p>
                 <p>Estado: {recepcion.estado}</p>
                 {recepcion.imagen_url && (
-                    <img src={recepcion.imagen_url} alt="Factura" className="mt-4 max-w-xs rounded-md shadow-sm" />
+                    <img 
+                      src={recepcion.imagen_url} 
+                      alt="Factura" 
+                      className="mt-4 max-w-xs rounded-md shadow-sm cursor-pointer hover:opacity-90 transition-opacity" 
+                      onClick={() => setFullScreenImage(recepcion.imagen_url)}
+                    />
                 )}
             </div>
             
@@ -286,7 +345,12 @@ export default function Recepcion() {
                             </div>
                             <div className="flex items-center gap-2 ml-4">
                                 {item.foto_item && (
-                                    <img src={URL.createObjectURL(item.foto_item)} alt="Item" className="w-12 h-12 rounded object-cover" />
+                                    <img 
+                                      src={URL.createObjectURL(item.foto_item)} 
+                                      alt="Item" 
+                                      className="w-12 h-12 rounded object-cover cursor-pointer hover:opacity-80 transition-opacity" 
+                                      onClick={() => setFullScreenImage(URL.createObjectURL(item.foto_item))}
+                                    />
                                 )}
                                 <input 
                                     type="file" 
@@ -315,6 +379,14 @@ export default function Recepcion() {
             <button onClick={handleConfirm} disabled={confirming} className="bg-green-600 text-white px-6 py-3 rounded-md font-bold disabled:bg-gray-400">
                 {confirming ? 'Guardando...' : 'Confirmar y Guardar Recepción'}
             </button>
+        </div>
+      )}
+      {fullScreenImage && (
+        <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4" onClick={() => setFullScreenImage(null)}>
+          <button className="absolute top-4 right-4 text-white hover:text-gray-300" onClick={() => setFullScreenImage(null)}>
+             <X size={32} />
+          </button>
+          <img src={fullScreenImage} alt="Fullscreen" className="max-w-full max-h-[90vh] object-contain rounded-lg" />
         </div>
       )}
     </div>
