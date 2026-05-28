@@ -22,6 +22,7 @@ export default function Recepcion() {
         setEditableItems(recepcion.items.map((item: any) => ({
             ...item,
             cantidad_manual: item.datos_json.cantidad || '',
+            producto_id: item.producto_id || '',
             foto_item: null // Store blob or preview URL
         })));
     }
@@ -35,7 +36,7 @@ export default function Recepcion() {
     if (!file) return;
     setLoading(true);
     try {
-        const result = await analizarFactura(file);
+        const result = await analizarFactura(file, materiasPrimas);
         setRecepcion(result);
     } catch(e) { console.error(e); }
     setLoading(false);
@@ -150,6 +151,7 @@ export default function Recepcion() {
                                           type="text" 
                                           value={item.datos_json?.cantidad || ''} 
                                           onChange={(e) => {
+                                              if (editingRecepcion.estado !== 'Recibido') return;
                                               const newItems = [...editingRecepcion.recepcion_items];
                                               newItems[idx] = { 
                                                   ...newItems[idx], 
@@ -157,49 +159,65 @@ export default function Recepcion() {
                                               };
                                               setEditingRecepcion({ ...editingRecepcion, recepcion_items: newItems });
                                           }}
-                                          className="border rounded p-1 w-24 text-sm"
+                                          disabled={editingRecepcion.estado !== 'Recibido'}
+                                          className="border rounded p-1 w-24 text-sm disabled:bg-gray-100 disabled:text-gray-600"
                                           placeholder="Ej: 200g"
                                       />
                                   </div>
                                   <select
                                       value={item.producto_id || ''}
                                       onChange={(e) => {
+                                          if (editingRecepcion.estado !== 'Recibido') return;
                                           const newItems = [...editingRecepcion.recepcion_items];
                                           newItems[idx] = { ...newItems[idx], producto_id: e.target.value };
                                           setEditingRecepcion({ ...editingRecepcion, recepcion_items: newItems });
                                       }}
-                                      className="border rounded p-1 w-full text-sm mt-2 focus:ring-1 focus:ring-black"
+                                      disabled={editingRecepcion.estado !== 'Recibido'}
+                                      className="border rounded p-1 w-full text-sm mt-2 focus:ring-1 focus:ring-black disabled:bg-gray-100 disabled:text-gray-600"
                                   >
                                       <option value="">-- Vincular Producto en Inventario --</option>
                                       {materiasPrimas.map(mp => (
                                           <option key={mp.id} value={mp.id}>{mp.nombre} (Stock: {mp.stock} {mp.unidad_medida})</option>
                                       ))}
                                   </select>
-                                  <p className="text-sm font-medium text-orange-600 mt-1">{item.match_status}</p>
+                                  <p className={cn("text-sm font-medium mt-1", item.match_status === 'OK' ? "text-green-600" : "text-orange-600")}>{item.match_status}</p>
                               </div>
                           </div>
                       ))}
                   </div>
                   
-                  <textarea className="w-full border p-2 mb-4 rounded" placeholder="Notas del inspector" value={adminNotas} onChange={e => setAdminNotas(e.target.value)} />
-                  
-                  <div className="mb-6">
-                      <label className="block text-sm font-medium mb-2">Almacén de Ingreso (Obligatorio para aprobar)</label>
-                      <select 
-                          value={selectedAlmacen}
-                          onChange={e => setSelectedAlmacen(e.target.value)}
-                          className="w-full border p-2 rounded focus:ring-1 focus:ring-black"
-                      >
-                          <option value="">-- Selecciona el Almacén --</option>
-                          {almacenes.map(a => (
-                              <option key={a.id} value={a.id}>{a.nombre}</option>
-                          ))}
-                      </select>
-                  </div>
+                  {editingRecepcion.estado === 'Recibido' ? (
+                      <>
+                        <textarea className="w-full border p-2 mb-4 rounded" placeholder="Notas del inspector" value={adminNotas} onChange={e => setAdminNotas(e.target.value)} />
+                        
+                        <div className="mb-6">
+                            <label className="block text-sm font-medium mb-2">Almacén de Ingreso (Obligatorio para aprobar)</label>
+                            <select 
+                                value={selectedAlmacen}
+                                onChange={e => setSelectedAlmacen(e.target.value)}
+                                className="w-full border p-2 rounded focus:ring-1 focus:ring-black"
+                            >
+                                <option value="">-- Selecciona el Almacén --</option>
+                                {almacenes.map(a => (
+                                    <option key={a.id} value={a.id}>{a.nombre}</option>
+                                ))}
+                            </select>
+                        </div>
+                      </>
+                  ) : (
+                      editingRecepcion.notas && (
+                          <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
+                              <p className="text-sm font-medium text-gray-500 mb-1">Notas del inspector:</p>
+                              <p className="text-gray-900">{editingRecepcion.notas}</p>
+                          </div>
+                      )
+                  )}
 
                   <div className="flex gap-2 justify-end">
                       <button onClick={() => setEditingRecepcion(null)} className="bg-gray-400 text-white px-4 py-2 rounded">Cerrar</button>
-                      <button onClick={() => handleApprove(editingRecepcion.id)} className="bg-green-600 text-white px-4 py-2 rounded">Aprobar</button>
+                      {editingRecepcion.estado === 'Recibido' && (
+                        <button onClick={() => handleApprove(editingRecepcion.id)} className="bg-green-600 text-white px-4 py-2 rounded">Aprobar</button>
+                      )}
                   </div>
               </div>
           </div>

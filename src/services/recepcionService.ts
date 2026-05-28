@@ -33,7 +33,7 @@ async function callOpenRouter(messages: any[], model: string = VISION_MODEL): Pr
   return data.choices?.[0]?.message?.content || "{}";
 }
 
-export async function analizarFactura(file: File) {
+export async function analizarFactura(file: File, materiasPrimas: any[] = []) {
     // 1. Upload to storage
     const { data: uploadData, error: uploadError } = await supabase.storage
         .from('transfer-evidence')
@@ -53,10 +53,17 @@ export async function analizarFactura(file: File) {
         reader.readAsDataURL(file);
     });
 
+    const inventarioStr = materiasPrimas.map(mp => `{ id: "${mp.id}", nombre: "${mp.nombre}", unidad: "${mp.unidad_medida}" }`).join(',\n');
+
     // 3. Call OpenRouter
     const prompt = `Eres el motor de auditoría y procesamiento de datos para la recepción de mercancía. 
     Procesa esta factura de proveedor detalladamente.
     
+    INVENTARIO ACTUAL:
+    [
+    ${inventarioStr}
+    ]
+
     Reglas de Extracción de Datos:
     - Estado: 'Recibido'.
     - Items: Extrae CADA ítem mencionado en la factura.
@@ -64,7 +71,8 @@ export async function analizarFactura(file: File) {
       - 'nombre_factura': Nombre tal como aparece en la factura.
       - 'datos_json.nombre': Nombre normalizado/estándar del producto.
       - 'datos_json.cantidad': La CANTIDAD EXACTA encontrada en la factura (ej: "2kg", "500g", "10 unidades"). DEBE SER UN STRING NO NULO si existe en la factura.
-      - Producto no reconocido: producto_id = null, estado = 'MANUAL_SEARCH_REQUIRED'.
+      - Intenta asociar el 'producto_id' eligiendo el id del INVENTARIO ACTUAL que más se parezca al tipo de producto. Si estás razonablemente seguro, proporciona el 'producto_id' y asigna verificacion.match_status='OK'.
+      - Si Producto no reconocido ni asimilable al inventario: producto_id = null, verificacion.match_status = 'MANUAL_SEARCH_REQUIRED'.
     - Pesos: Convertir a gramos (g) si es posible, mantener formato de cantidad robusto.
     
     Responde estrictamente con este formato JSON:
@@ -148,15 +156,22 @@ export async function guardarRecepcion(recepcion: any) {
             }
         }
 
-        await supabase.from('recepcion_items').insert({
+        let status = item.verificacion?.match_status || 'MANUAL_SEARCH_REQUIRED';
+        if (status === 'MATCH_FOUND') status = 'OK';
+
+        const { error: itemError } = await supabase.from('recepcion_items').insert({
             recepcion_id: recepcionData.id,
             producto_id: item.producto_id,
             nombre_factura: item.nombre_factura,
             datos_json: item.datos_json,
             peso_balanza: parseFloat(item.verificacion?.peso_balanza) || 0,
-            match_status: item.verificacion?.match_status || 'MANUAL_SEARCH_REQUIRED',
+            match_status: status,
             imagen_url: itemImageUrl
         });
+        if (itemError) {
+            console.error('Failed to insert item:', itemError, item);
+            throw itemError;
+        }
     }
     
     return { id: recepcionData.id };
@@ -220,13 +235,25 @@ export async function aprobarRecepcion(id: string, estado: string, notas: string
             for (const item of items) {
                 if (item.producto_id) {
                     let cantidadStr = "";
-                    if (item.datos_json && typeof item.datos_json === 'object') {
-                        cantidadStr = item.datos_json.cantidad;
+                    let datosObj = item.datos_json;
+                    if (datosObj) {
+                        if (typeof datosObj === 'string') {
+                            try {
+                                datosObj = JSON.parse(datosObj);
+                            } catch (e) {
+                                console.error('Error parsing datos_json:', e);
+                            }
+                        }
+                        if (datosObj && typeof datosObj === 'object') {
+                            cantidadStr = (datosObj as any).cantidad;
+                        }
                     }
+                    
                     let parsedCantidad = parseFloat(cantidadStr);
                     
                     if (isNaN(parsedCantidad) || parsedCantidad <= 0) {
-                        parsedCantidad = parseFloat(item.peso_balanza);
+                        const pb = item.peso_balanza;
+                        parsedCantidad = (typeof pb === 'number' && !isNaN(pb)) ? pb : parseFloat(pb);
                     }
 
                     if (!isNaN(parsedCantidad) && parsedCantidad > 0) {
@@ -248,7 +275,7 @@ export async function aprobarRecepcion(id: string, estado: string, notas: string
                                 cantidad: parsedCantidad,
                                 unidad_medida: unidad_medida,
                                 bundle_id: bundle_id,
-                                comentario: 'Recepción FC: ' + (data[0]?.factura_nro || '')
+                                comentario: 'Recepción FC: ' + (data?.[0]?.factura_nro || '')
                             });
                         } catch(e) {
                             console.error('Failed to create movement for item', item.id, e);
