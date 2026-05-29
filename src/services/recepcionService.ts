@@ -128,7 +128,8 @@ export async function guardarRecepcion(recepcion: any) {
         facturaUrl = publicUrl;
     }
 
-    // 2. Save reception to DB
+    // 2. Save reception to DB (We still leave estado strictly to what makes sense, maybe 'Recibido' or 'Aprobado')
+    // A reception might just be 'Recibido' initially and later 'Aprobado' just to review details.
     const { data: recepcionData, error: dbError } = await supabase
         .from('recepciones')
         .insert({
@@ -143,7 +144,10 @@ export async function guardarRecepcion(recepcion: any) {
     
     if (dbError) throw dbError;
 
-    // 3. Save items
+    // 3. Save items and create stock movements
+    const bundle_id = 'rec_' + recepcionData.id;
+    const { createMovimiento } = await import('./movimientos');
+
     for (const item of recepcion.items) {
         let itemImageUrl = null;
         if (item.foto_item instanceof File) {
@@ -171,6 +175,57 @@ export async function guardarRecepcion(recepcion: any) {
         if (itemError) {
             console.error('Failed to insert item:', itemError, item);
             throw itemError;
+        }
+
+        // Add to stock if valid product and amount
+        if (recepcion.almacen_id && item.producto_id) {
+            let cantidadStr = "";
+            let datosObj = item.datos_json;
+            if (datosObj) {
+                if (typeof datosObj === 'string') {
+                    try {
+                        datosObj = JSON.parse(datosObj);
+                    } catch (e) {
+                        console.error('Error parsing datos_json:', e);
+                    }
+                }
+                if (datosObj && typeof datosObj === 'object') {
+                    cantidadStr = (datosObj as any).cantidad;
+                }
+            }
+            
+            let parsedCantidad = parseFloat(cantidadStr);
+            
+            if (isNaN(parsedCantidad) || parsedCantidad <= 0) {
+                const pb = item.verificacion?.peso_balanza;
+                parsedCantidad = (typeof pb === 'number' && !isNaN(pb)) ? pb : parseFloat(pb);
+            }
+
+            if (!isNaN(parsedCantidad) && parsedCantidad > 0) {
+                // Get unit
+                let unidad_medida = 'kg';
+                const { data: mpData } = await supabase
+                    .from('materias_primas')
+                    .select('unidad_medida')
+                    .eq('id', item.producto_id)
+                    .single();
+                    
+                if (mpData) unidad_medida = mpData.unidad_medida;
+
+                try {
+                    await createMovimiento({
+                        materia_prima_id: item.producto_id,
+                        almacen_id: recepcion.almacen_id,
+                        tipo: 'entrada',
+                        cantidad: parsedCantidad,
+                        unidad_medida: unidad_medida,
+                        bundle_id: bundle_id,
+                        comentario: 'Recepción FC: ' + recepcionData.factura_nro
+                    });
+                } catch(e) {
+                    console.error('Failed to create movement for item', item.nombre_factura, e);
+                }
+            }
         }
     }
     
@@ -221,69 +276,6 @@ export async function aprobarRecepcion(id: string, estado: string, notas: string
     if (error) {
         console.error('Service: Error updating recepcion', error);
         throw error;
-    }
-
-    if (estado === 'Aprobado' && almacen_id) {
-        const { data: items, error: itemsError } = await supabase
-            .from('recepcion_items')
-            .select('*')
-            .eq('recepcion_id', id);
-
-        if (!itemsError && items) {
-            const bundle_id = 'rec_' + id;
-            const { createMovimiento } = await import('./movimientos');
-            for (const item of items) {
-                if (item.producto_id) {
-                    let cantidadStr = "";
-                    let datosObj = item.datos_json;
-                    if (datosObj) {
-                        if (typeof datosObj === 'string') {
-                            try {
-                                datosObj = JSON.parse(datosObj);
-                            } catch (e) {
-                                console.error('Error parsing datos_json:', e);
-                            }
-                        }
-                        if (datosObj && typeof datosObj === 'object') {
-                            cantidadStr = (datosObj as any).cantidad;
-                        }
-                    }
-                    
-                    let parsedCantidad = parseFloat(cantidadStr);
-                    
-                    if (isNaN(parsedCantidad) || parsedCantidad <= 0) {
-                        const pb = item.peso_balanza;
-                        parsedCantidad = (typeof pb === 'number' && !isNaN(pb)) ? pb : parseFloat(pb);
-                    }
-
-                    if (!isNaN(parsedCantidad) && parsedCantidad > 0) {
-                        // Intentamos obtener la unidad de medida original
-                        let unidad_medida = 'kg';
-                        const { data: mpData } = await supabase
-                            .from('materias_primas')
-                            .select('unidad_medida')
-                            .eq('id', item.producto_id)
-                            .single();
-                            
-                        if (mpData) unidad_medida = mpData.unidad_medida;
-
-                        try {
-                            await createMovimiento({
-                                materia_prima_id: item.producto_id,
-                                almacen_id: almacen_id,
-                                tipo: 'entrada',
-                                cantidad: parsedCantidad,
-                                unidad_medida: unidad_medida,
-                                bundle_id: bundle_id,
-                                comentario: 'Recepción FC: ' + (data?.[0]?.factura_nro || '')
-                            });
-                        } catch(e) {
-                            console.error('Failed to create movement for item', item.id, e);
-                        }
-                    }
-                }
-            }
-        }
     }
 
     console.log('Service: Update successful', data);

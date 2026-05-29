@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, AlertCircle, Check, MessageCircle, X } from 'lucide-react';
+import { Camera, AlertCircle, Check, MessageCircle, X, Trash2 } from 'lucide-react';
 import { analizarFactura, guardarRecepcion, listarRecepciones, obtenerDetalleRecepcion, aprobarRecepcion } from '../services/recepcionService';
 import { cn } from '../lib/utils';
 import { useAppContext } from '../context/AppContext';
@@ -14,6 +14,7 @@ export default function Recepcion() {
   const [confirming, setConfirming] = useState(false);
   const [editingRecepcion, setEditingRecepcion] = useState<any>(null);
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
+  const [itemSearchTerms, setItemSearchTerms] = useState<Record<number, string>>({});
   const [adminNotas, setAdminNotas] = useState('');
   const [selectedAlmacen, setSelectedAlmacen] = useState<string>('');
 
@@ -61,12 +62,29 @@ export default function Recepcion() {
     setEditableItems(newItems);
   };
 
+  const deleteItem = (idx: number) => {
+    const newItems = editableItems.filter((_, i) => i !== idx);
+    setEditableItems(newItems);
+  };
+
+  const deleteEditingItem = (idx: number) => {
+    if (editingRecepcion && editingRecepcion.estado === 'Recibido') {
+      const newItems = editingRecepcion.recepcion_items.filter((_, i: number) => i !== idx);
+      setEditingRecepcion({ ...editingRecepcion, recepcion_items: newItems });
+    }
+  };
+
   const handleConfirm = async () => {
+    if (!selectedAlmacen) {
+        alert('Por favor selecciona un almacén en el que ingresar los productos.');
+        return;
+    }
     setConfirming(true);
     try {
         // Update recepcion data with editableItems
         const updatedRecepcion = {
             ...recepcion,
+            almacen_id: selectedAlmacen,
             factura_file: file, // Include the file object
             items: editableItems.map(item => ({
                 ...item,
@@ -74,28 +92,25 @@ export default function Recepcion() {
             }))
         };
         await guardarRecepcion(updatedRecepcion);
-        alert('Recepción guardada correctamente');
+        alert('Recepción guardada correctamente y se cargó inventario en el almacén');
         setRecepcion(null);
         setFile(null);
         setEditableItems([]);
+        setSelectedAlmacen('');
         const updatedList = await listarRecepciones();
         setRecepciones(updatedList);
+        await loadData();
     } catch(e) { console.error(e); }
     setConfirming(false);
   };
 
   const handleApprove = async (id: string) => {
-    if (!selectedAlmacen) {
-        alert('Por favor selecciona un almacén en el que ingresar los productos.');
-        return;
-    }
     try {
-        console.log('Aprobando recepción', id, 'con notas:', adminNotas, 'almacen', selectedAlmacen);
-        await aprobarRecepcion(id, 'Aprobado', adminNotas, selectedAlmacen, editingRecepcion.recepcion_items);
-        alert('Recepción aprobada y productos cargados al almacén seleccionado.');
+        console.log('Aprobando recepción', id, 'con notas:', adminNotas);
+        await aprobarRecepcion(id, 'Aprobado', adminNotas, '', editingRecepcion.recepcion_items);
+        alert('Recepción aprobada.');
         setEditingRecepcion(null);
         setAdminNotas(''); // Clear notes
-        setSelectedAlmacen(''); // Clear selection
         const updatedList = await listarRecepciones();
         setRecepciones(updatedList);
         await loadData(); // Update inventory stock
@@ -188,7 +203,7 @@ export default function Recepcion() {
                   <div className="space-y-4 mb-6">
                       <p className="font-semibold">Ítems Detallados:</p>
                       {editingRecepcion.recepcion_items.map((item: any, idx: number) => (
-                          <div key={idx} className="border p-4 rounded-lg flex items-start gap-4">
+                          <div key={idx} className="border p-4 rounded-lg flex items-start gap-4 relative">
                               {item.imagen_url && (
                                   <img 
                                     src={item.imagen_url} 
@@ -198,7 +213,19 @@ export default function Recepcion() {
                                   />
                               )}
                               <div className="flex-1">
-                                  <p className="font-semibold">{item.nombre_factura}</p>
+                                  <div className="flex justify-between items-start">
+                                      <p className="font-semibold">{item.nombre_factura}</p>
+                                      {editingRecepcion.estado === 'Recibido' && (
+                                          <button
+                                              type="button"
+                                              onClick={() => deleteEditingItem(idx)}
+                                              className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 transition-colors"
+                                              title="Eliminar ítem"
+                                          >
+                                              <Trash2 size={18} />
+                                          </button>
+                                      )}
+                                  </div>
                                   <div className="flex items-center gap-2 mt-1">
                                       <span className="text-sm">Cantidad:</span>
                                       <input 
@@ -218,6 +245,13 @@ export default function Recepcion() {
                                           placeholder="Ej: 200g"
                                       />
                                   </div>
+                                  <input 
+                                      type="text"
+                                      placeholder="🔍 Buscar producto..."
+                                      value={itemSearchTerms[`modal-${idx}`] || ''}
+                                      onChange={(e) => setItemSearchTerms({...itemSearchTerms, [`modal-${idx}`]: e.target.value})}
+                                      className="border rounded p-1 w-full text-sm mb-1"
+                                  />
                                   <select
                                       value={item.producto_id || ''}
                                       onChange={(e) => {
@@ -227,10 +261,12 @@ export default function Recepcion() {
                                           setEditingRecepcion({ ...editingRecepcion, recepcion_items: newItems });
                                       }}
                                       disabled={editingRecepcion.estado !== 'Recibido'}
-                                      className="border rounded p-1 w-full text-sm mt-2 focus:ring-1 focus:ring-black disabled:bg-gray-100 disabled:text-gray-600"
+                                      className="border rounded p-1 w-full text-sm mt-1 focus:ring-1 focus:ring-black disabled:bg-gray-100 disabled:text-gray-600"
                                   >
                                       <option value="">-- Vincular Producto en Inventario --</option>
-                                      {materiasPrimas.map(mp => (
+                                      {materiasPrimas
+                                        .filter(mp => mp.nombre.toLowerCase().includes((itemSearchTerms[`modal-${idx}`] || '').toLowerCase()))
+                                        .map(mp => (
                                           <option key={mp.id} value={mp.id}>{mp.nombre} (Stock: {mp.stock} {mp.unidad_medida})</option>
                                       ))}
                                   </select>
@@ -243,20 +279,6 @@ export default function Recepcion() {
                   {editingRecepcion.estado === 'Recibido' ? (
                       <>
                         <textarea className="w-full border p-2 mb-4 rounded" placeholder="Notas del inspector" value={adminNotas} onChange={e => setAdminNotas(e.target.value)} />
-                        
-                        <div className="mb-6">
-                            <label className="block text-sm font-medium mb-2">Almacén de Ingreso (Obligatorio para aprobar)</label>
-                            <select 
-                                value={selectedAlmacen}
-                                onChange={e => setSelectedAlmacen(e.target.value)}
-                                className="w-full border p-2 rounded focus:ring-1 focus:ring-black"
-                            >
-                                <option value="">-- Selecciona el Almacén --</option>
-                                {almacenes.map(a => (
-                                    <option key={a.id} value={a.id}>{a.nombre}</option>
-                                ))}
-                            </select>
-                        </div>
                       </>
                   ) : (
                       editingRecepcion.notas && (
@@ -306,8 +328,8 @@ export default function Recepcion() {
             <div className="grid gap-4">
                 { editableItems.map((item: any, idx: number) => (
                     <div key={idx} className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-                        <div className="flex items-center justify-between">
-                            <div className="flex-1">
+                        <div className="flex justify-between items-start border-b border-gray-100 pb-2 mb-3">
+                            <div className="flex-1 mr-4">
                                 {item.isManual ? (
                                     <input 
                                         type="text" 
@@ -317,8 +339,20 @@ export default function Recepcion() {
                                         placeholder="Nombre del producto"
                                     />
                                 ) : (
-                                    <p className="font-semibold">{item.nombre_factura}</p>
+                                    <p className="font-semibold text-gray-850">{item.nombre_factura}</p>
                                 )}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => deleteItem(idx)}
+                                className="text-red-500 hover:text-red-700 p-1.5 rounded-md hover:bg-red-50 transition-colors"
+                                title="Eliminar ítem"
+                            >
+                                <Trash2 size={18} />
+                            </button>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <div className="flex-1">
                                 <div className="flex flex-col gap-2 mt-2">
                                     <div className="flex items-center gap-2">
                                         <span className="text-sm">Cantidad:</span>
@@ -330,14 +364,23 @@ export default function Recepcion() {
                                             placeholder="Ej: 200g"
                                         />
                                     </div>
+                                    <input 
+                                        type="text"
+                                        placeholder="🔍 Buscar producto..."
+                                        value={itemSearchTerms[`edit-${idx}`] || ''}
+                                        onChange={(e) => setItemSearchTerms({...itemSearchTerms, [`edit-${idx}`]: e.target.value})}
+                                        className="border rounded p-1 w-full text-sm mb-1"
+                                    />
                                     <select
                                         value={item.producto_id || ''}
                                         onChange={(e) => updateItem(idx, 'producto_id', e.target.value)}
-                                        className="border rounded p-1 w-full text-sm mt-1 focus:ring-1 focus:ring-black"
+                                        className="border rounded p-1 w-full text-sm focus:ring-1 focus:ring-black"
                                     >
                                         <option value="">-- Vincular Producto en Inventario --</option>
-                                        {materiasPrimas.map(mp => (
-                                            <option key={mp.id} value={mp.id}>{mp.nombre} (Stock: {mp.stock} {mp.unidad_medida})</option>
+                                        {materiasPrimas
+                                            .filter(mp => mp.nombre.toLowerCase().includes((itemSearchTerms[`edit-${idx}`] || '').toLowerCase()))
+                                            .map(mp => (
+                                                <option key={mp.id} value={mp.id}>{mp.nombre} (Stock: {mp.stock} {mp.unidad_medida})</option>
                                         ))}
                                     </select>
                                 </div>
@@ -376,7 +419,21 @@ export default function Recepcion() {
                 </button>
             </div>
             
-            <button onClick={handleConfirm} disabled={confirming} className="bg-green-600 text-white px-6 py-3 rounded-md font-bold disabled:bg-gray-400">
+            <div className="bg-white p-6 rounded-lg shadow-sm mb-4">
+                <label className="block text-sm font-medium mb-2">Almacén de Ingreso (Obligatorio)</label>
+                <select 
+                    value={selectedAlmacen}
+                    onChange={e => setSelectedAlmacen(e.target.value)}
+                    className="w-full border p-2 rounded focus:ring-1 focus:ring-black"
+                >
+                    <option value="">-- Selecciona el Almacén --</option>
+                    {almacenes.map(a => (
+                        <option key={a.id} value={a.id}>{a.nombre}</option>
+                    ))}
+                </select>
+            </div>
+
+            <button onClick={handleConfirm} disabled={confirming} className="bg-green-600 w-full text-white px-6 py-3 rounded-md font-bold disabled:bg-gray-400">
                 {confirming ? 'Guardando...' : 'Confirmar y Guardar Recepción'}
             </button>
         </div>
