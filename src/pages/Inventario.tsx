@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Edit2, Trash2, X, Filter, FileText, Printer, Calendar, PlusCircle } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Filter, FileText, Printer, Calendar, PlusCircle, RefreshCw } from 'lucide-react';
 import { MateriaPrimaFormData, MovimientoFormData } from '../types';
 import { format, isWithinInterval, startOfDay, endOfDay, parseISO, subDays } from 'date-fns';
 import { cn } from '../lib/utils';
@@ -12,6 +12,7 @@ export default function Inventario() {
   const { isAdmin, profile } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
+  const [stockModalItem, setStockModalItem] = useState<any>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isReportMode, setIsReportMode] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -31,12 +32,9 @@ export default function Inventario() {
     max_stock: 0,
   });
 
-  const [stockFormData, setStockFormData] = useState<MovimientoFormData>({
-    materia_prima_id: '',
+  const [stockFormData, setStockFormData] = useState({
     almacen_id: '',
-    tipo: 'entrada',
     cantidad: 0,
-    unidad_medida: 'kg',
     comentario: '',
   });
 
@@ -62,27 +60,54 @@ export default function Inventario() {
   };
 
   const handleOpenStockModal = (mp: any) => {
+    setStockModalItem(mp);
     setStockFormData({
-        materia_prima_id: mp.id,
         almacen_id: almacenes[0]?.id || '',
-        tipo: 'entrada',
-        cantidad: 0,
-        unidad_medida: mp.unidad_medida,
-        comentario: '',
+        cantidad: mp.stock || 0, // In fallback, it might use global if global is selected, but better to fetch below or in useEffect
+        comentario: 'Ajuste de inventario',
     });
     setIsStockModalOpen(true);
   };
 
+  useEffect(() => {
+    if (isStockModalOpen && stockModalItem && stockFormData.almacen_id) {
+        // Find current stock specifically for the selected warehouse
+        let currentStockInAlmacen = 0;
+        if (stockFormData.almacen_id === 'global') {
+          currentStockInAlmacen = stockModalItem.stock;
+        } else {
+          currentStockInAlmacen = stockAlmacen.find(s => s.materia_prima_id === stockModalItem.id && s.almacen_id === stockFormData.almacen_id)?.stock || 0;
+        }
+        setStockFormData(prev => ({ ...prev, cantidad: currentStockInAlmacen }));
+    }
+  }, [stockFormData.almacen_id, isStockModalOpen, stockModalItem]);
+
   const handleSubmitStock = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!stockModalItem || stockFormData.almacen_id === 'global' || !stockFormData.almacen_id) {
+        alert('Por favor selecciona un almacén específico.');
+        return;
+    }
     try {
         setIsSubmitting(true);
-        await movimientosService.createMovimiento(stockFormData);
-        await loadData(); // Refresh app state
+        const currentStockInAlmacen = stockAlmacen.find(s => s.materia_prima_id === stockModalItem.id && s.almacen_id === stockFormData.almacen_id)?.stock || 0;
+        const diff = stockFormData.cantidad - currentStockInAlmacen;
+        
+        if (diff !== 0) {
+            await movimientosService.createMovimiento({
+                materia_prima_id: stockModalItem.id,
+                almacen_id: stockFormData.almacen_id,
+                tipo: diff > 0 ? 'entrada' : 'salida',
+                cantidad: Math.abs(diff),
+                unidad_medida: stockModalItem.unidad_medida,
+                comentario: stockFormData.comentario || 'Ajuste manual de stock',
+            });
+            await loadData();
+        }
         setIsStockModalOpen(false);
     } catch (error) {
         console.error(error);
-        alert('Error al agregar stock');
+        alert('Error al actualizar stock');
     } finally {
         setIsSubmitting(false);
     }
@@ -447,8 +472,8 @@ export default function Inventario() {
                             <Edit2 size={18} />
                           </button>
                         )}
-                        <button onClick={() => handleOpenStockModal(mp)} className="text-green-600 hover:text-green-900 mr-4" title="Agregar Stock">
-                          <PlusCircle size={18} />
+                        <button onClick={() => handleOpenStockModal(mp)} className="text-green-600 hover:text-green-900 mr-4" title="Actualizar Stock">
+                          <RefreshCw size={18} />
                         </button>
                         {isAdmin && (
                           <button onClick={() => handleDelete(mp.id)} className="text-red-600 hover:text-red-900">
@@ -586,7 +611,7 @@ export default function Inventario() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-medium text-gray-900">Agregar Stock</h3>
+              <h3 className="text-lg font-medium text-gray-900">Actualizar Stock</h3>
               <button onClick={() => setIsStockModalOpen(false)} className="text-gray-400 hover:text-gray-500">
                 <X size={24} />
               </button>
@@ -608,7 +633,7 @@ export default function Inventario() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700">Cantidad</label>
+                <label className="block text-sm font-medium text-gray-700">Cantidad Actual / Nueva</label>
                 <input
                   type="number"
                   required
@@ -650,7 +675,7 @@ export default function Inventario() {
                       Guardando...
                     </>
                   ) : (
-                    'Agregar'
+                    'Actualizar'
                   )}
                 </button>
               </div>
