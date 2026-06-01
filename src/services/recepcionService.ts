@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const VISION_MODEL = "google/gemini-2.0-flash-lite-001";
+const VISION_MODEL = "google/gemini-2.5-flash-lite";
 
 async function callOpenRouter(messages: any[], model: string = VISION_MODEL): Promise<string> {
   if (!apiKey) throw new Error("OPENROUTER_API_KEY is not defined");
