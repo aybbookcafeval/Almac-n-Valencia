@@ -118,6 +118,8 @@ export type TrasladoMgtaItemFormData = {
   cantidad: number;
   unidad_medida: string;
   costo_euro?: number;
+  is_manual?: boolean;
+  manual_nombre?: string;
 };
 
 export type TrasladoMgtaFormData = {

@@ -7,12 +7,14 @@ export function parseTrasladoComentario(comentarioRaw: string | undefined): {
   tasa_dolar: number;
   tasa_euro: number;
   costos_euro: number[];
+  manual_items: any[];
 } {
   const result = {
     comentario: comentarioRaw || '',
     tasa_dolar: 1.0,
     tasa_euro: 1.0,
     costos_euro: [] as number[],
+    manual_items: [] as any[],
   };
 
   if (!comentarioRaw) return result;
@@ -26,6 +28,7 @@ export function parseTrasladoComentario(comentarioRaw: string | undefined): {
         result.tasa_dolar = Number(data.tasa_dolar) || 1.0;
         result.tasa_euro = Number(data.tasa_euro) || 1.0;
         result.costos_euro = Array.isArray(data.costos_euro) ? data.costos_euro.map(Number) : [];
+        result.manual_items = Array.isArray(data.manual_items) ? data.manual_items : [];
       }
     } catch (e) {
       // Not a valid JSON or not our metadata, keep as plaintext
@@ -40,7 +43,8 @@ export function serializeTrasladoComentario(
   comentario: string,
   tasa_dolar: number,
   tasa_euro: number,
-  costos_euro: number[]
+  costos_euro: number[],
+  manual_items?: any[]
 ): string {
   return JSON.stringify({
     _isCostoMeta: true,
@@ -48,6 +52,7 @@ export function serializeTrasladoComentario(
     tasa_dolar: Number(tasa_dolar) || 1.0,
     tasa_euro: Number(tasa_euro) || 1.0,
     costos_euro: costos_euro.map(Number),
+    manual_items: manual_items || [],
   });
 }
 
@@ -90,13 +95,18 @@ export async function getTrasladosMgta(): Promise<TrasladoMgta[]> {
   if (!isSupabaseConfigured()) {
     const enrichedMock = mockTraslados.map(t => {
       const meta = parseTrasladoComentario(t.comentario);
+      
+      const dbItemsOnly = (t.items || []).filter(itm => itm.materia_prima_id !== '__manual__');
+      const manualItems = meta.manual_items || [];
+      const mergedItems = [...dbItemsOnly, ...manualItems];
+
       return {
         ...t,
         comentario: meta.comentario,
         tasa_dolar: meta.tasa_dolar,
         tasa_euro: meta.tasa_euro,
-        items: (t.items || []).map((itm, index) => {
-          const costo_euro = meta.costos_euro[index] !== undefined ? meta.costos_euro[index] : (itm.costo_euro || 0);
+        items: mergedItems.map((itm) => {
+          const costo_euro = itm.costo_euro || 0;
           const calculated = meta.tasa_dolar > 0 ? (meta.tasa_euro / meta.tasa_dolar) * costo_euro * itm.cantidad : 0;
           return {
             ...itm,
@@ -136,6 +146,28 @@ export async function getTrasladosMgta(): Promise<TrasladoMgta[]> {
 
   return (data || []).map((t: any) => {
     const meta = parseTrasladoComentario(t.comentario);
+    
+    const dbItemsMapped = (t.items || []).map((itm: any, index: number) => {
+      const costo_euro = meta.costos_euro[index] !== undefined ? meta.costos_euro[index] : 0;
+      const qty = Number(itm.cantidad);
+      const costo_calculado = meta.tasa_dolar > 0 ? (meta.tasa_euro / meta.tasa_dolar) * costo_euro * qty : 0;
+      return {
+        id: itm.id,
+        traslado_id: itm.traslado_id,
+        materia_prima_id: itm.materia_prima_id,
+        almacen_origen_id: itm.almacen_origen_id,
+        cantidad: qty,
+        unidad_medida: itm.unidad_medida,
+        materia_prima_nombre: itm.materia_prima?.nombre || 'Producto Desconocido',
+        almacen_origen_nombre: itm.almacen?.nombre || 'Almacén Desconocido',
+        costo_euro,
+        costo_calculado,
+      };
+    });
+
+    const manualItems = meta.manual_items || [];
+    const mergedItems = [...dbItemsMapped, ...manualItems];
+
     return {
       id: t.id,
       fecha: t.fecha,
@@ -143,23 +175,7 @@ export async function getTrasladosMgta(): Promise<TrasladoMgta[]> {
       tasa_dolar: meta.tasa_dolar,
       tasa_euro: meta.tasa_euro,
       created_at: t.created_at,
-      items: (t.items || []).map((itm: any, index: number) => {
-        const costo_euro = meta.costos_euro[index] !== undefined ? meta.costos_euro[index] : 0;
-        const qty = Number(itm.cantidad);
-        const costo_calculado = meta.tasa_dolar > 0 ? (meta.tasa_euro / meta.tasa_dolar) * costo_euro * qty : 0;
-        return {
-          id: itm.id,
-          traslado_id: itm.traslado_id,
-          materia_prima_id: itm.materia_prima_id,
-          almacen_origen_id: itm.almacen_origen_id,
-          cantidad: qty,
-          unidad_medida: itm.unidad_medida,
-          materia_prima_nombre: itm.materia_prima?.nombre || 'Producto Desconocido',
-          almacen_origen_nombre: itm.almacen?.nombre || 'Almacén Desconocido',
-          costo_euro,
-          costo_calculado,
-        };
-      })
+      items: mergedItems
     };
   });
 }
@@ -170,15 +186,36 @@ export async function createTrasladoMgta(
 ): Promise<TrasladoMgta> {
   const customId = `TM-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
   
+  const dbItemsData = data.items.filter(item => !item.is_manual);
+  const manualItemsData = data.items.filter(item => item.is_manual);
+
+  const manualItemsMapped: TrasladoMgtaItem[] = manualItemsData.map((item, index) => {
+    const costo_euro = item.costo_euro || 0;
+    const calculated = (data.tasa_dolar && data.tasa_dolar > 0) ? ((data.tasa_euro || 1.0) / data.tasa_dolar) * costo_euro * item.cantidad : 0;
+    return {
+      id: `manual-item-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 5)}`,
+      traslado_id: customId,
+      materia_prima_id: '__manual__',
+      almacen_origen_id: item.almacen_origen_id || 'default',
+      cantidad: item.cantidad,
+      unidad_medida: item.unidad_medida || 'unidades',
+      materia_prima_nombre: item.manual_nombre || 'Producto Manual',
+      almacen_origen_nombre: displayNames.warehouses[item.almacen_origen_id] || 'Almacén',
+      costo_euro,
+      costo_calculado: calculated,
+    };
+  });
+
   const serializedComment = serializeTrasladoComentario(
     data.comentario || '',
     data.tasa_dolar || 1.0,
     data.tasa_euro || 1.0,
-    data.items.map(item => item.costo_euro || 0)
+    data.items.map(item => item.costo_euro || 0),
+    manualItemsMapped
   );
 
   if (!isSupabaseConfigured()) {
-    const newItems: TrasladoMgtaItem[] = data.items.map((item, index) => {
+    const newDbItems: TrasladoMgtaItem[] = dbItemsData.map((item, index) => {
       const costo_euro = item.costo_euro || 0;
       const calculated = (data.tasa_dolar && data.tasa_dolar > 0) ? ((data.tasa_euro || 1.0) / data.tasa_dolar) * costo_euro * item.cantidad : 0;
       return {
@@ -200,7 +237,7 @@ export async function createTrasladoMgta(
       fecha: new Date().toISOString(),
       comentario: serializedComment,
       created_at: new Date().toISOString(),
-      items: newItems,
+      items: [...newDbItems, ...manualItemsMapped],
     };
 
     mockTraslados.push(newTraslado);
@@ -213,6 +250,8 @@ export async function createTrasladoMgta(
     .insert({
       id: customId,
       comentario: serializedComment,
+      tasa_dolar: data.tasa_dolar || 1.0,
+      tasa_euro: data.tasa_euro || 1.0
     });
 
   if (mainError) {
@@ -220,8 +259,8 @@ export async function createTrasladoMgta(
     throw mainError;
   }
 
-  // Step 2: Insert into 'traslado_mgta_items' and update stock via registrar_movimiento_almacen
-  for (const item of data.items) {
+  // Step 2: Insert into 'traslado_mgta_items' and update stock via registrar_movimiento_almacen ONLY for standard db items
+  for (const item of dbItemsData) {
     const { error: detailError } = await supabase
       .from('traslado_mgta_items')
       .insert({

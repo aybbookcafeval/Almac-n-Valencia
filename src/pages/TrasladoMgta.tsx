@@ -80,7 +80,7 @@ export default function TrasladoMgtaPage() {
       doc.setTextColor(191, 104, 73);
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(22);
-      doc.text('VALENCIA ALMACÉN', 15, 25);
+      doc.text('AYB BOOKCAFE', 15, 25);
 
       doc.setTextColor(100, 100, 100);
       doc.setFont('Helvetica', 'normal');
@@ -91,7 +91,7 @@ export default function TrasladoMgtaPage() {
       doc.setTextColor(0, 0, 0);
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(11);
-      doc.text('Destino Oficial: SEDE MARGARITA (MGTA)', 15, 38);
+      doc.text('Destino Oficial: AYB BOOKCAFE MGTA, C.A. J505320203', 15, 38);
 
       // Right Metadata Info Box
       doc.setFillColor(245, 245, 245);
@@ -123,9 +123,9 @@ export default function TrasladoMgtaPage() {
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(8.5);
       doc.setTextColor(120, 120, 120);
-      doc.text('ORIGEN DE CARGA:', 20, 54);
+      doc.text('ORIGEN:', 20, 54);
       doc.setTextColor(0, 0, 0);
-      doc.text('Múltiples Almacenes Locales (Detalle abajo)', 20, 59);
+      doc.text('AYB BOOKCAFE, C.A. J500830300 - VALENCIA', 20, 59);
 
       doc.setTextColor(120, 120, 120);
       doc.text('FECHA DE EXPEDICIÓN:', 120, 54);
@@ -197,10 +197,12 @@ export default function TrasladoMgtaPage() {
       });
 
       // Signatures blocks near the bottom
-      const finalY = (doc as any).lastAutoTable.finalY + 30;
-      
-      // Keep within single page if possible, otherwise let it flow
-      const signatureY = finalY > 230 ? 245 : finalY;
+      let signatureY = 245;
+      const lastY = (doc as any).lastAutoTable.finalY || 100;
+      if (lastY > 235) {
+        doc.addPage();
+        signatureY = 245;
+      }
       
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(0.3);
@@ -223,7 +225,7 @@ export default function TrasladoMgtaPage() {
       doc.setFont('Helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.setTextColor(150, 150, 150);
-      doc.text(`Documento generado electrónicamente en Valencia Almacén el ${format(new Date(), 'dd/MM/yyyy HH:mm:ss')}.`, 15, 272);
+      doc.text(`Documento generado electrónicamente en AYB BOOKCAFE el ${format(new Date(), 'dd/MM/yyyy HH:mm:ss')}.`, 15, 272);
 
       // Trigger file download
       doc.save(`Traslado_MGTA_${traslado.id}.pdf`);
@@ -249,9 +251,37 @@ export default function TrasladoMgtaPage() {
       ...updated[index],
       materia_prima_id: mpId,
       unidad_medida: mp ? mp.unidad_medida : 'kg',
+      is_manual: false,
+      manual_nombre: undefined,
       // Reset quantity to avoid exceeding limits of a changing product
       cantidad: 0,
     };
+    setItems(updated);
+  };
+
+  const toggleManualProduct = (index: number) => {
+    const updated = [...items];
+    const wasManual = !!updated[index].is_manual;
+    updated[index] = {
+      ...updated[index],
+      is_manual: !wasManual,
+      materia_prima_id: !wasManual ? '__manual__' : '',
+      manual_nombre: !wasManual ? '' : undefined,
+      unidad_medida: !wasManual ? 'unidades' : 'kg',
+      cantidad: 0,
+    };
+    setItems(updated);
+  };
+
+  const handleManualNameChange = (index: number, name: string) => {
+    const updated = [...items];
+    updated[index].manual_nombre = name;
+    setItems(updated);
+  };
+
+  const handleManualUnitChange = (index: number, unit: string) => {
+    const updated = [...items];
+    updated[index].unidad_medida = unit;
     setItems(updated);
   };
 
@@ -300,7 +330,11 @@ export default function TrasladoMgtaPage() {
     e.preventDefault();
     
     // Validate rows
-    if (items.some(item => !item.materia_prima_id || !item.almacen_origen_id)) {
+    if (items.some(item => 
+      (!item.is_manual && !item.materia_prima_id) || 
+      (item.is_manual && !item.manual_nombre?.trim()) || 
+      !item.almacen_origen_id
+    )) {
       toast.error('Por favor complete todos los productos y almacenes de origen');
       return;
     }
@@ -310,9 +344,11 @@ export default function TrasladoMgtaPage() {
       return;
     }
 
-    // Checking stock validations
+    // Checking stock validations (skip manual non-inventory products)
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
+      if (item.is_manual) continue;
+      
       const stock = getAvailableStock(item.materia_prima_id, item.almacen_origen_id);
       const prodName = materiasPrimas.find(m => m.id === item.materia_prima_id)?.nombre || 'un producto';
       const almName = almacenes.find(a => a.id === item.almacen_origen_id)?.nombre || 'un almacén';
@@ -442,7 +478,7 @@ export default function TrasladoMgtaPage() {
               {items.map((item, idx) => {
                 const availableStock = getAvailableStock(item.materia_prima_id, item.almacen_origen_id);
                 return (
-                  <div key={idx} className="p-4 bg-gray-50/50 rounded-xl border border-gray-150 space-y-4 relative">
+                  <div key={idx} className="p-4 bg-gray-55/50 rounded-xl border border-gray-150 space-y-4 relative">
                     {items.length > 1 && (
                       <button 
                         type="button" 
@@ -454,19 +490,49 @@ export default function TrasladoMgtaPage() {
                       </button>
                     )}
 
-                    {/* Step 1: Select Product */}
+                    {/* Step 1: Select Product or Manual Input */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Producto</label>
-                        <SearchableSelect
-                          value={item.materia_prima_id}
-                          onChange={(val) => handleMateriaPrimaChange(idx, val)}
-                          options={materiasPrimas.map(mp => ({
-                            id: mp.id,
-                            label: mp.nombre,
-                          }))}
-                          placeholder="Seleccione producto..."
-                        />
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="block text-xs font-semibold text-gray-500">Producto</label>
+                          <button
+                            type="button"
+                            onClick={() => toggleManualProduct(idx)}
+                            className="text-[11px] text-[#bf6849] hover:underline hover:text-[#a35235] font-bold"
+                          >
+                            {item.is_manual ? "← Seleccionar de la lista" : "+ Escribir manual (No en sistema)"}
+                          </button>
+                        </div>
+                        {item.is_manual ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <input
+                              type="text"
+                              required
+                              value={item.manual_nombre || ''}
+                              onChange={(e) => handleManualNameChange(idx, e.target.value)}
+                              className="block w-full h-10 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#bf6849] focus:outline-none focus:ring-1 focus:ring-[#bf6849] font-semibold"
+                              placeholder="Nombre del producto..."
+                            />
+                            <input
+                              type="text"
+                              required
+                              value={item.unidad_medida || 'unidades'}
+                              onChange={(e) => handleManualUnitChange(idx, e.target.value)}
+                              className="block w-full h-10 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#bf6849] focus:outline-none focus:ring-1 focus:ring-[#bf6849]"
+                              placeholder="Unidad de Medida (Ej: un, kg, L)"
+                            />
+                          </div>
+                        ) : (
+                          <SearchableSelect
+                            value={item.materia_prima_id}
+                            onChange={(val) => handleMateriaPrimaChange(idx, val)}
+                            options={materiasPrimas.map(mp => ({
+                              id: mp.id,
+                              label: mp.nombre,
+                            }))}
+                            placeholder="Seleccione producto..."
+                          />
+                        )}
                       </div>
 
                       {/* Step 2: Select Origin Warehouse */}
@@ -487,16 +553,22 @@ export default function TrasladoMgtaPage() {
                     </div>
 
                     {/* Step 3: Stock indicator and quantity entry */}
-                    {item.materia_prima_id && item.almacen_origen_id && (
+                    {((item.is_manual && item.almacen_origen_id) || (item.materia_prima_id && item.almacen_origen_id)) && (
                       <div className="space-y-3 pt-1">
                         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-3 rounded-lg border border-gray-100 text-sm">
                           <div className="flex items-center space-x-2 text-gray-600">
-                            <Info size={16} className="text-[#bf6849]" />
-                            <span>
-                              Stock disponible: <strong className={cn(availableStock === 0 ? "text-red-600" : "text-gray-900")}>
-                                {availableStock} {item.unidad_medida}
-                              </strong>
-                            </span>
+                            <Info size={16} className={cn(item.is_manual ? "text-zinc-400" : "text-[#bf6849]")} />
+                            {item.is_manual ? (
+                              <span className="text-xs text-gray-500 italic">
+                                Producto manual (sin control de inventario en almacén)
+                              </span>
+                            ) : (
+                              <span>
+                                Stock disponible: <strong className={cn(availableStock === 0 ? "text-red-600" : "text-gray-900")}>
+                                  {availableStock} {item.unidad_medida}
+                                </strong>
+                              </span>
+                            )}
                           </div>
 
                           <div className="flex items-center space-x-2">
@@ -507,7 +579,7 @@ export default function TrasladoMgtaPage() {
                                 required
                                 min="0.01"
                                 step="0.01"
-                                max={availableStock}
+                                max={item.is_manual ? undefined : availableStock}
                                 placeholder="0.00"
                                 value={item.cantidad || ''}
                                 onChange={(e) => handleQuantityChange(idx, Number(e.target.value))}
@@ -602,7 +674,7 @@ export default function TrasladoMgtaPage() {
 
             <button
               type="submit"
-              disabled={isSubmitting || items.some(i => i.cantidad <= 0 || !i.materia_prima_id || !i.almacen_origen_id)}
+              disabled={isSubmitting || items.some(i => i.cantidad <= 0 || (!i.is_manual && !i.materia_prima_id) || (i.is_manual && !i.manual_nombre?.trim()) || !i.almacen_origen_id)}
               className="w-full h-11 bg-black hover:bg-zinc-900 text-white font-medium rounded-lg shadow-primary-subtle transition-all duration-150 disabled:opacity-40 flex items-center justify-center space-x-2"
             >
               {isSubmitting ? (
@@ -918,7 +990,7 @@ export default function TrasladoMgtaPage() {
                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Lista de Productos a Enviar ({items.length})</p>
                 <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
                   {items.map((item, index) => {
-                    const prodName = materiasPrimas.find(m => m.id === item.materia_prima_id)?.nombre || 'un producto';
+                    const prodName = item.is_manual ? item.manual_nombre : (materiasPrimas.find(m => m.id === item.materia_prima_id)?.nombre || 'un producto');
                     const almName = almacenes.find(a => a.id === item.almacen_origen_id)?.nombre || 'un almacén';
                     return (
                       <div key={index} className="p-3 flex justify-between items-center bg-white hover:bg-gray-50/50 text-sm">
@@ -971,13 +1043,13 @@ export default function TrasladoMgtaPage() {
 
       {/* Printable Area - Document format */}
       {selectedTraslado && (
-        <div className="print-only p-8 bg-white text-black min-h-screen">
+        <div className="print-only p-8 bg-white text-black min-h-screen relative">
           {/* Letterhead */}
           <div className="border-b-2 border-black pb-6 mb-6 flex justify-between items-start">
             <div>
-              <h1 className="text-2xl font-bold uppercase tracking-wider text-black">VALENCIA ALMACÉN</h1>
-              <p className="text-xs text-gray-500">CONTROL DE TRASLADO E INVENTARIO</p>
-              <p className="text-xs text-gray-500 mt-2 font-semibold">Destino: SEDE MARGARITA (MGTA)</p>
+              <h1 className="text-2xl font-bold uppercase tracking-wider text-black">AYB BOOKCAFE</h1>
+              <p className="text-xs text-gray-500 font-semibold">CONTROL DE TRASLADO E INVENTARIO</p>
+              <p className="text-xs text-gray-700 mt-2 font-bold">Destino: AYB BOOKCAFE MGTA, C.A. J505320203</p>
             </div>
             <div className="text-right">
               <div className="bg-black text-white px-4 py-2 rounded font-mono text-sm font-bold inline-block mb-1">
@@ -992,7 +1064,7 @@ export default function TrasladoMgtaPage() {
           <div className="grid grid-cols-2 gap-4 text-xs bg-gray-50 p-4 rounded border border-gray-200 mb-6 print:bg-gray-50 print:border-gray-200">
             <div>
               <span className="font-bold text-gray-400 uppercase block">Origen</span>
-              <span className="font-medium text-gray-900 font-semibold">Múltiples Almacenes Detallados abajo</span>
+              <span className="font-medium text-gray-950 font-bold">AYB BOOKCAFE, C.A. J500830300 - VALENCIA</span>
             </div>
             <div>
               <span className="font-bold text-gray-400 uppercase block">Fecha de Expedición</span>
@@ -1053,7 +1125,7 @@ export default function TrasladoMgtaPage() {
           </div>
 
           {/* Signatures */}
-          <div className="mt-20 grid grid-cols-2 gap-12 text-center text-xs">
+          <div className="mt-32 print:absolute print:bottom-16 print:left-8 print:right-8 grid grid-cols-2 gap-12 text-center text-xs">
             <div className="border-t border-black pt-4">
               <p className="font-bold uppercase">Entregado Por (Despacho)</p>
               <div className="h-12"></div>
@@ -1064,8 +1136,8 @@ export default function TrasladoMgtaPage() {
             </div>
           </div>
 
-          <div className="mt-16 text-center text-[10px] text-gray-400 border-t pt-4 border-gray-250">
-            Este es un comprobante de traslado oficial de mercancía de Valencia Almacén. Generado el {format(new Date(), 'dd/MM/yyyy HH:mm')}.
+          <div className="mt-16 print:absolute print:bottom-6 print:left-8 print:right-8 text-center text-[10px] text-gray-400 border-t pt-4 border-gray-250">
+            Este es un comprobante de traslado oficial de mercancía de AYB BOOKCAFE. Generado el {format(new Date(), 'dd/MM/yyyy HH:mm')}.
           </div>
         </div>
       )}
