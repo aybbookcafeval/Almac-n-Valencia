@@ -15,6 +15,7 @@ import Movimientos from './pages/Movimientos';
 import Almacenes from './pages/Almacenes';
 import Transferencias from './pages/Transferencias';
 import Recepcion from './pages/Recepcion';
+import TrasladoMgta from './pages/TrasladoMgta';
 import LoginPage from './pages/LoginPage';
 
 import { useAppContext } from './context/AppContext';
@@ -54,6 +55,7 @@ export default function App() {
               <Route path="almacenes" element={<Almacenes />} />
               <Route path="transferencias" element={<Transferencias />} />
               <Route path="recepcion" element={<Recepcion />} />
+              <Route path="traslado-mgta" element={<TrasladoMgta />} />
             </Route>
           </Routes>
         </BrowserRouter>

@@ -17,18 +17,23 @@
   color: white;
 }
 
+.print-only {
+  display: none !important;
+}
+
 @media print {
   @page {
-    margin: 1cm;
+    margin: 1.5cm;
     size: portrait;
   }
 
   body {
     background: white !important;
     color: black !important;
+    font-family: Arial, sans-serif !important;
   }
 
-  /* Hide everything by default when printing */
+  .no-print,
   nav, 
   aside, 
   header, 
@@ -37,8 +42,7 @@
     display: none !important;
   }
 
-  /* Ensure the main content is visible and takes full width */
-  main, 
+  .print-only,
   .print\:block {
     display: block !important;
     width: 100% !important;

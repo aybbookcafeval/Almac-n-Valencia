@@ -33,7 +33,7 @@ export type MateriaPrima = {
 
 export type Movimiento = {
   id: string;
-  bundle_id: string;
+  bundle_id?: string;
   materia_prima_id: string;
   almacen_id: string;
   tipo: 'entrada' | 'salida';
@@ -85,4 +85,44 @@ export type TransferenciaFormData = {
   items: TransferenciaItem[];
   comentario?: string;
   imagen_url?: string;
+};
+
+export type TrasladoMgtaItem = {
+  id: string;
+  traslado_id: string;
+  materia_prima_id: string;
+  almacen_origen_id: string;
+  cantidad: number;
+  unidad_medida: string;
+  // Join fields for UI
+  materia_prima_nombre?: string;
+  almacen_origen_nombre?: string;
+  // Cost fields
+  costo_euro?: number;
+  costo_calculado?: number;
+};
+
+export type TrasladoMgta = {
+  id: string;
+  fecha: string;
+  comentario?: string;
+  created_at: string;
+  items?: TrasladoMgtaItem[];
+  tasa_dolar?: number;
+  tasa_euro?: number;
+};
+
+export type TrasladoMgtaItemFormData = {
+  materia_prima_id: string;
+  almacen_origen_id: string;
+  cantidad: number;
+  unidad_medida: string;
+  costo_euro?: number;
+};
+
+export type TrasladoMgtaFormData = {
+  comentario?: string;
+  items: TrasladoMgtaItemFormData[];
+  tasa_dolar?: number;
+  tasa_euro?: number;
 };

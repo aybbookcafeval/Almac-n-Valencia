@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Package, GitCompare, ArrowRightLeft, Menu, X, LogOut, Warehouse, ArrowDownToLine } from 'lucide-react';
+import { LayoutDashboard, Package, GitCompare, ArrowRightLeft, Menu, X, LogOut, Warehouse, ArrowDownToLine, Truck } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../context/AuthContext';
 
@@ -15,6 +15,7 @@ export const Layout = () => {
     { name: 'Recepcion', path: '/recepcion', icon: ArrowDownToLine },
     { name: 'Movimientos', path: '/movimientos', icon: GitCompare },
     { name: 'Transferencias', path: '/transferencias', icon: ArrowRightLeft },
+    { name: 'Traslado MGTA', path: '/traslado-mgta', icon: Truck },
     { name: 'Almacenes', path: '/almacenes', icon: Warehouse },
   ];
 
@@ -32,7 +33,7 @@ export const Layout = () => {
 
       {/* Sidebar */}
       <aside className={cn(
-        "fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 flex flex-col transition-transform duration-300 ease-in-out lg:static lg:translate-x-0",
+        "fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 flex flex-col transition-transform duration-300 ease-in-out lg:static lg:translate-x-0 print:hidden",
         isSidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="h-16 flex items-center justify-between px-6 border-b border-gray-200">
@@ -66,8 +67,8 @@ export const Layout = () => {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
-        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 lg:px-8">
+      <main className="flex-1 flex flex-col min-h-screen overflow-hidden print:bg-white">
+        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 lg:px-8 print:hidden">
           <div className="flex items-center">
             <button 
               onClick={() => setIsSidebarOpen(true)}
@@ -87,7 +88,7 @@ export const Layout = () => {
             Salir
           </button>
         </header>
-        <div className="flex-1 overflow-auto p-4 lg:p-8">
+        <div className="flex-1 overflow-auto p-4 lg:p-8 print:p-0">
           <Outlet />
         </div>
       </main>
