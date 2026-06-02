@@ -144,6 +144,9 @@ export default function Recepcion() {
           mpName = item.nombre_factura;
       }
       text += `- ${mpName}: ${item.datos_json?.cantidad || ''}\n`;
+      if (item.imagen_url) {
+        text += `  📷 Imagen: ${item.imagen_url}\n`;
+      }
     });
     
     if (recep.imagen_url) {
