@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Package, GitCompare, ArrowRightLeft, Menu, X, LogOut, Warehouse, ArrowDownToLine, Truck } from 'lucide-react';
+import { LayoutDashboard, Package, GitCompare, ArrowRightLeft, Menu, X, LogOut, Warehouse, ArrowDownToLine, Truck, Bot } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../context/AuthContext';
 
@@ -17,6 +17,7 @@ export const Layout = () => {
     { name: 'Transferencias', path: '/transferencias', icon: ArrowRightLeft },
     { name: 'Traslado MGTA', path: '/traslado-mgta', icon: Truck },
     { name: 'Almacenes', path: '/almacenes', icon: Warehouse },
+    { name: 'Asistente de IA', path: '/asistente-ia', icon: Bot },
   ];
 
   const closeSidebar = () => setIsSidebarOpen(false);

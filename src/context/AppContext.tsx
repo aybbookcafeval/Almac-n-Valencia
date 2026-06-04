@@ -20,7 +20,7 @@ interface AppContextType {
   editMateriaPrima: (id: string, data: Partial<MateriaPrimaFormData>) => Promise<void>;
   removeMateriaPrima: (id: string) => Promise<void>;
   addMovimiento: (data: MovimientoBundleFormData & { almacen_id: string }, file?: File) => Promise<void>;
-  transferirStock: (data: TransferenciaFormData) => Promise<void>;
+  transferirStock: (data: TransferenciaFormData, file?: File) => Promise<void>;
   addAlmacen: (data: AlmacenFormData) => Promise<void>;
   editAlmacen: (id: string, data: Partial<AlmacenFormData>) => Promise<void>;
   removeAlmacen: (id: string) => Promise<void>;

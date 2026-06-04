@@ -301,3 +301,153 @@ export async function createTrasladoMgta(
   }
   return created;
 }
+
+export async function removeTrasladoMgta(id: string): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    mockTraslados = mockTraslados.filter(t => t.id !== id);
+    return;
+  }
+
+  // 1. Fetch current items to revert stock
+  const { data: items, error: fetchError } = await supabase
+    .from('traslado_mgta_items')
+    .select('*')
+    .eq('traslado_id', id);
+
+  if (fetchError) throw fetchError;
+
+  // 2. Revert stock
+  for (const item of (items || [])) {
+    const { error: rpcError } = await supabase.rpc('registrar_movimiento_almacen', {
+      p_materia_prima_id: item.materia_prima_id,
+      p_almacen_id: item.almacen_origen_id,
+      p_tipo: 'entrada',
+      p_cantidad: item.cantidad,
+      p_bundle_id: id,
+      p_unidad_medida: item.unidad_medida,
+      p_comentario: `Reversión por eliminación de Traslado MGTA ref: ${id}`,
+      p_imagen_url: null
+    });
+    if (rpcError) throw rpcError;
+  }
+
+  // 3. Delete from DB (this might cascade, but let's delete items first just in case)
+  await supabase.from('traslado_mgta_items').delete().eq('traslado_id', id);
+  const { error: deleteError } = await supabase.from('traslado_mgta').delete().eq('id', id);
+
+  if (deleteError) throw deleteError;
+}
+
+export async function editTrasladoMgta(
+  id: string,
+  data: TrasladoMgtaFormData,
+  displayNames: { products: Record<string, string>, warehouses: Record<string, string> }
+): Promise<TrasladoMgta> {
+  if (!isSupabaseConfigured()) {
+    await removeTrasladoMgta(id);
+    const updated = await createTrasladoMgta(data, displayNames);
+    updated.id = id;
+    updated.fecha = new Date().toISOString();
+    updated.items.forEach(itm => itm.traslado_id = id);
+    const index = mockTraslados.findIndex(t => t.id === updated.id);
+    if(index > -1) mockTraslados[index] = updated;
+    return updated;
+  }
+
+  // 1. Fetch current items to revert stock
+  const { data: oldItems, error: fetchError } = await supabase
+    .from('traslado_mgta_items')
+    .select('*')
+    .eq('traslado_id', id);
+
+  if (fetchError) throw fetchError;
+
+  // 2. Revert old stock
+  for (const item of (oldItems || [])) {
+    const { error: rpcError } = await supabase.rpc('registrar_movimiento_almacen', {
+      p_materia_prima_id: item.materia_prima_id,
+      p_almacen_id: item.almacen_origen_id,
+      p_tipo: 'entrada',
+      p_cantidad: item.cantidad,
+      p_bundle_id: id,
+      p_unidad_medida: item.unidad_medida,
+      p_comentario: `Reversión por edición de Traslado MGTA ref: ${id}`,
+      p_imagen_url: null
+    });
+    if (rpcError) throw rpcError;
+  }
+
+  // 3. Delete old items
+  await supabase.from('traslado_mgta_items').delete().eq('traslado_id', id);
+
+  // 4. Update Traslado Mgta Main info
+  const dbItemsData = data.items.filter(item => !item.is_manual);
+  const manualItemsData = data.items.filter(item => item.is_manual);
+
+  const manualItemsMapped: TrasladoMgtaItem[] = manualItemsData.map((item, index) => {
+    const costo_euro = item.costo_euro || 0;
+    const calculated = (data.tasa_dolar && data.tasa_dolar > 0) ? ((data.tasa_euro || 1.0) / data.tasa_dolar) * costo_euro * item.cantidad : 0;
+    return {
+      id: `manual-item-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 5)}`,
+      traslado_id: id,
+      materia_prima_id: '__manual__',
+      almacen_origen_id: item.almacen_origen_id || 'default',
+      cantidad: item.cantidad,
+      unidad_medida: item.unidad_medida || 'unidades',
+      materia_prima_nombre: item.manual_nombre || 'Producto Manual',
+      almacen_origen_nombre: displayNames.warehouses[item.almacen_origen_id] || 'Almacén',
+      costo_euro,
+      costo_calculado: calculated,
+    };
+  });
+
+  const serializedComment = serializeTrasladoComentario(
+    data.comentario || '',
+    data.tasa_dolar || 1.0,
+    data.tasa_euro || 1.0,
+    data.items.map(item => item.costo_euro || 0),
+    manualItemsMapped
+  );
+
+  const { error: updateError } = await supabase
+    .from('traslado_mgta')
+    .update({
+      comentario: serializedComment,
+      tasa_dolar: data.tasa_dolar || 1.0,
+      tasa_euro: data.tasa_euro || 1.0
+    })
+    .eq('id', id);
+
+  if (updateError) throw updateError;
+
+  // 5. Insert new items and deduct stock
+  for (const item of dbItemsData) {
+    const { error: detailError } = await supabase
+      .from('traslado_mgta_items')
+      .insert({
+        traslado_id: id,
+        materia_prima_id: item.materia_prima_id,
+        almacen_origen_id: item.almacen_origen_id,
+        cantidad: item.cantidad,
+        unidad_medida: item.unidad_medida
+      });
+
+    if (detailError) throw detailError;
+
+    const { error: rpcError } = await supabase.rpc('registrar_movimiento_almacen', {
+      p_materia_prima_id: item.materia_prima_id,
+      p_almacen_id: item.almacen_origen_id,
+      p_tipo: 'salida',
+      p_cantidad: item.cantidad,
+      p_bundle_id: id,
+      p_unidad_medida: item.unidad_medida,
+      p_comentario: `Traslado MGTA ref: ${id}. ${data.comentario || ''}`,
+      p_imagen_url: null
+    });
+
+    if (rpcError) throw rpcError;
+  }
+
+  const fetched = await getTrasladosMgta();
+  return fetched.find(t => t.id === id) as TrasladoMgta;
+}

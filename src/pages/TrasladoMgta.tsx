@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 import { useAppContext } from '../context/AppContext';
 import { Truck, PlusCircle, Trash2, Eye, Calendar, X, FileText, ChevronLeft, ChevronRight, Search, Info, Printer, Download } from 'lucide-react';
 import { SearchableSelect } from '../components/SearchableSelect';
-import { getTrasladosMgta, createTrasladoMgta } from '../services/trasladosMgta';
+import { getTrasladosMgta, createTrasladoMgta, editTrasladoMgta, removeTrasladoMgta } from '../services/trasladosMgta';
 import { TrasladoMgta, TrasladoMgtaItemFormData } from '../types';
 import { cn } from '../lib/utils';
 import { format } from 'date-fns';
@@ -19,6 +19,8 @@ export default function TrasladoMgtaPage() {
   const [searchTerm, setSearchTerm] = useState('');
   
   // State for form
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [comentario, setComentario] = useState('');
   const [tasaDolar, setTasaDolar] = useState<number>(1.0);
@@ -374,28 +376,25 @@ export default function TrasladoMgtaPage() {
       const warehousesMap: Record<string, string> = {};
       almacenes.forEach(a => { warehousesMap[a.id] = a.nombre; });
 
-      await createTrasladoMgta({ 
-        comentario, 
-        items, 
-        tasa_dolar: Number(tasaDolar) || 1.0, 
-        tasa_euro: Number(tasaEuro) || 1.0 
-      }, { products: productsMap, warehouses: warehousesMap });
+      if (isEditing && editingId) {
+        await editTrasladoMgta(editingId, { 
+          comentario, 
+          items, 
+          tasa_dolar: Number(tasaDolar) || 1.0, 
+          tasa_euro: Number(tasaEuro) || 1.0 
+        }, { products: productsMap, warehouses: warehousesMap });
+        toast.success('¡Traslado MGTA actualizado y stock ajustado!');
+      } else {
+        await createTrasladoMgta({ 
+          comentario, 
+          items, 
+          tasa_dolar: Number(tasaDolar) || 1.0, 
+          tasa_euro: Number(tasaEuro) || 1.0 
+        }, { products: productsMap, warehouses: warehousesMap });
+        toast.success('¡Traslado MGTA registrado y descontado del inventario!');
+      }
       
-      toast.success('¡Traslado MGTA registrado y descontado del inventario!');
-      
-      // Reset form
-      setComentario('');
-      setTasaDolar(1.0);
-      setTasaEuro(1.0);
-      setItems([
-        {
-          materia_prima_id: '',
-          almacen_origen_id: '',
-          cantidad: 0,
-          unidad_medida: 'kg',
-          costo_euro: 0,
-        }
-      ]);
+      cancelEdit();
       setShowConfirmPreview(false);
 
       // Refresh global states & history
@@ -405,6 +404,54 @@ export default function TrasladoMgtaPage() {
       toast.error(err.message || 'Error al procesar traslado');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const cancelEdit = () => {
+    setIsEditing(false);
+    setEditingId(null);
+    setComentario('');
+    setTasaDolar(1.0);
+    setTasaEuro(1.0);
+    setItems([{ materia_prima_id: '', almacen_origen_id: '', cantidad: 0, unidad_medida: 'kg', costo_euro: 0 }]);
+  };
+
+  const initEdit = (traslado: TrasladoMgta) => {
+    setIsEditing(true);
+    setEditingId(traslado.id);
+    setComentario(traslado.comentario || '');
+    setTasaDolar(traslado.tasa_dolar || 1.0);
+    setTasaEuro(traslado.tasa_euro || 1.0);
+    setItems((traslado.items || []).map(item => ({
+      materia_prima_id: item.materia_prima_id === '__manual__' ? '' : item.materia_prima_id,
+      almacen_origen_id: item.almacen_origen_id,
+      cantidad: item.cantidad,
+      unidad_medida: item.unidad_medida,
+      is_manual: item.materia_prima_id === '__manual__',
+      manual_nombre: item.materia_prima_nombre,
+      costo_euro: item.costo_euro || 0
+    })));
+  };
+
+  const handleDeleteTraslado = async (id: string) => {
+    if (!window.confirm('¿Está seguro de que desea eliminar este traslado? El stock será devuelto a los almacenes de origen correspondientes.')) {
+      return;
+    }
+
+    try {
+      setLoadingHistory(true);
+      await removeTrasladoMgta(id);
+      toast.success('Traslado MGTA eliminado y stock devuelto exitosamente');
+      await loadData();
+      await fetchHistory();
+      if (isEditing && editingId === id) {
+        cancelEdit();
+      }
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message || 'Error al eliminar el traslado');
+    } finally {
+      setLoadingHistory(false);
     }
   };
 
@@ -438,7 +485,7 @@ export default function TrasladoMgtaPage() {
         <section className="lg:col-span-7 bg-white p-6 rounded-xl border border-gray-200 shadow-primary-subtle space-y-6">
           <div className="flex items-center space-x-2 border-b border-gray-100 pb-3">
             <span className="w-1.5 h-6 bg-[#bf6849] rounded-r"></span>
-            <h3 className="text-lg font-semibold text-gray-900">Registrar Nuevo Traslado</h3>
+            <h3 className="text-lg font-semibold text-gray-900">{isEditing ? 'Editar Traslado MGTA' : 'Registrar Nuevo Traslado'}</h3>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -672,23 +719,35 @@ export default function TrasladoMgtaPage() {
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={isSubmitting || items.some(i => i.cantidad <= 0 || (!i.is_manual && !i.materia_prima_id) || (i.is_manual && !i.manual_nombre?.trim()) || !i.almacen_origen_id)}
-              className="w-full h-11 bg-black hover:bg-zinc-900 text-white font-medium rounded-lg shadow-primary-subtle transition-all duration-150 disabled:opacity-40 flex items-center justify-center space-x-2"
-            >
-              {isSubmitting ? (
-                <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" />
-                  <span>Registrando Traslado...</span>
-                </>
-              ) : (
-                <>
-                  <Truck size={20} />
-                  <span>Confirmar y Registrar Traslado MGTA</span>
-                </>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={isSubmitting || items.some(i => i.cantidad <= 0 || (!i.is_manual && !i.materia_prima_id) || (i.is_manual && !i.manual_nombre?.trim()) || !i.almacen_origen_id)}
+                className="flex-1 h-11 bg-black hover:bg-zinc-900 text-white font-medium rounded-lg shadow-primary-subtle transition-all duration-150 disabled:opacity-40 flex items-center justify-center space-x-2"
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" />
+                    <span>{isEditing ? 'Actualizando...' : 'Registrando Traslado...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Truck size={20} />
+                    <span>{isEditing ? 'Actualizar Traslado MGTA' : 'Confirmar y Registrar Traslado MGTA'}</span>
+                  </>
+                )}
+              </button>
+              {isEditing && (
+                <button
+                  type="button"
+                  onClick={cancelEdit}
+                  disabled={isSubmitting}
+                  className="h-11 px-4 border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium rounded-lg transition-all"
+                >
+                  Cancelar Edición
+                </button>
               )}
-            </button>
+            </div>
           </form>
         </section>
 
@@ -747,29 +806,44 @@ export default function TrasladoMgtaPage() {
                           {format(new Date(t.fecha), 'dd/MM/yyyy HH:mm')}
                         </td>
                         <td className="p-3 text-center">
-                          <div className="flex items-center justify-center space-x-2">
+                          <div className="flex items-center justify-center space-x-1.5 flex-wrap gap-y-1">
                             <button
                               onClick={() => {
                                 setSelectedTraslado(t);
                                 setIsDetailModalOpen(true);
                               }}
-                              className="p-1 px-2 bg-gray-100 hover:bg-gray-200 text-gray-700 hover:text-black rounded text-xs font-semibold transition-colors flex items-center space-x-1"
+                              className="p-1 px-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 hover:text-black rounded text-[10px] font-semibold transition-colors flex items-center space-x-1"
                               title="Ver detalles"
                             >
                               <Eye size={12} />
                               <span>Ver</span>
                             </button>
                             <button
+                               onClick={() => initEdit(t)}
+                               className="p-1 px-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded text-[10px] font-semibold transition-colors flex items-center space-x-1"
+                               title="Editar traslado"
+                             >
+                               <span>Editar</span>
+                             </button>
+                             <button
+                               onClick={() => handleDeleteTraslado(t.id)}
+                               className="p-1 px-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded text-[10px] font-semibold transition-colors flex items-center space-x-1"
+                               title="Eliminar traslado"
+                             >
+                               <Trash2 size={12} />
+                               <span>Eliminar</span>
+                             </button>
+                            <button
                               onClick={() => handlePrint(t)}
-                              className="p-1 px-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded text-xs font-semibold transition-colors flex items-center space-x-1"
+                              className="p-1 px-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded text-[10px] font-semibold transition-colors flex items-center space-x-1"
                               title="Imprimir documento"
                             >
                               <Printer size={12} />
-                              <span>Imprimir</span>
+                              <span>Impr</span>
                             </button>
                             <button
                               onClick={() => exportToPDF(t)}
-                              className="p-1 px-2 bg-[#bf6849]/10 hover:bg-[#bf6849]/25 text-[#bf6849] rounded text-xs font-semibold transition-colors flex items-center space-x-1"
+                              className="p-1 px-1.5 bg-[#bf6849]/10 hover:bg-[#bf6849]/25 text-[#bf6849] rounded text-[10px] font-semibold transition-colors flex items-center space-x-1"
                               title="Descargar PDF"
                             >
                               <Download size={12} />
