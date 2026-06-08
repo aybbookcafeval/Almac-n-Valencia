@@ -40,6 +40,39 @@ export default function Movimientos() {
   const [file, setFile] = useState<File | null>(null);
   const [selectedBundle, setSelectedBundle] = useState<Movimiento[] | null>(null);
 
+  const handleOpenTransferDetails = (t: any) => {
+    const movements: Movimiento[] = t.items.flatMap((item: any) => [
+      {
+        id: `mock-salida-${item.id}`,
+        bundle_id: t.id,
+        materia_prima_id: item.materia_prima_id,
+        almacen_id: t.almacen_origen_id,
+        tipo: 'salida',
+        cantidad: item.cantidad,
+        unidad_medida: item.unidad_medida,
+        fecha: t.fecha,
+        imagen_url: t.imagen_url,
+        comentario: t.comentario,
+        created_at: t.created_at
+      },
+      {
+        id: `mock-entrada-${item.id}`,
+        bundle_id: t.id,
+        materia_prima_id: item.materia_prima_id,
+        almacen_id: t.almacen_destino_id,
+        tipo: 'entrada',
+        cantidad: item.cantidad,
+        unidad_medida: item.unidad_medida,
+        fecha: t.fecha,
+        imagen_url: t.imagen_url,
+        comentario: t.comentario,
+        created_at: t.created_at
+      }
+    ]);
+    setSelectedBundle(movements);
+  };
+
+
   const isSalidaDisabled = useMemo(() => {
     const selectedAlmacen = almacenes.find(a => a.id === formData.almacen_id);
     if (!selectedAlmacen) return false;
@@ -362,7 +395,8 @@ export default function Movimientos() {
               const almacenOrigen = almacenes.find(a => a.id === t.almacen_origen_id)?.nombre || 'Desconocido';
               const almacenDestino = almacenes.find(a => a.id === t.almacen_destino_id)?.nombre || 'Desconocido';
               return (
-                <div key={t.id} className="bg-white p-4 rounded-lg border border-orange-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div key={t.id} onClick={() => handleOpenTransferDetails(t)} className="bg-white p-4 rounded-lg border border-orange-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 cursor-pointer hover:bg-orange-50/50">
+
                   <div>
                     <p className="text-sm text-gray-500 mb-1">{format(new Date(t.fecha), 'dd/MM/yyyy HH:mm')}</p>
                     <p className="font-medium text-gray-900">{almacenOrigen} ➔ {almacenDestino}</p>
