@@ -186,7 +186,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const anularMovimiento = async (bundle_id: string) => {
     try {
       await movimientosService.anularMovimiento(bundle_id);
-      await loadData(); // Reload stats and history
+      // Manually update state for instant feedback
+      setMovimientos(prev => prev.filter(m => m.bundle_id !== bundle_id));
+      await loadData();
     } catch (err: any) {
       throw new Error(err.message || 'Error al anular movimiento');
     }
