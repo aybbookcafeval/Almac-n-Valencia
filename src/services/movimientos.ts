@@ -1,11 +1,188 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { Movimiento, MovimientoFormData, TransferenciaFormData } from '../types';
+import { Movimiento, MovimientoFormData, TransferenciaFormData, TransferenciaDB } from '../types';
 
 // Mock data for preview
 let mockMovimientos: Movimiento[] = [
   { id: '101', bundle_id: 'b1', materia_prima_id: '1', almacen_id: 'default', tipo: 'entrada', cantidad: 100, unidad_medida: 'kg', fecha: new Date().toISOString(), created_at: new Date().toISOString(), comentario: 'Carga inicial' },
   { id: '102', bundle_id: 'b2', materia_prima_id: '2', almacen_id: 'default', tipo: 'salida', cantidad: 50, unidad_medida: 'kg', fecha: new Date().toISOString(), created_at: new Date().toISOString(), comentario: 'Pedido cliente A' },
 ];
+
+let mockTransferencias: TransferenciaDB[] = [];
+
+export const getTransferencias = async (): Promise<TransferenciaDB[]> => {
+  if (!isSupabaseConfigured()) {
+    return [...mockTransferencias].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+  }
+  const { data, error } = await supabase
+    .from('transferencias')
+    .select(`
+      *,
+      items:transferencia_items(*)
+    `)
+    .order('fecha', { ascending: false });
+    
+  if (error) throw error;
+  return data as TransferenciaDB[];
+};
+
+export const createTransferenciaEnRevision = async (data: TransferenciaFormData): Promise<TransferenciaDB> => {
+  if (!isSupabaseConfigured()) {
+    const newTrans: TransferenciaDB = {
+      id: Math.random().toString(36).substring(7),
+      almacen_origen_id: data.almacen_origen_id,
+      almacen_destino_id: data.almacen_destino_id,
+      estado: 'revision',
+      comentario: data.comentario,
+      imagen_url: data.imagen_url,
+      fecha: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      items: data.items.map(i => ({
+        id: Math.random().toString(36).substring(7),
+        transferencia_id: '',
+        materia_prima_id: i.materia_prima_id,
+        cantidad: i.cantidad,
+        unidad_medida: i.unidad_medida
+      }))
+    };
+    newTrans.items?.forEach(i => i.transferencia_id = newTrans.id);
+    mockTransferencias.push(newTrans);
+    return newTrans;
+  }
+
+  // 1. Insert main record
+  const { data: newTrans, error: transError } = await supabase
+    .from('transferencias')
+    .insert({
+      almacen_origen_id: data.almacen_origen_id,
+      almacen_destino_id: data.almacen_destino_id,
+      estado: 'revision',
+      comentario: data.comentario,
+      imagen_url: data.imagen_url
+    })
+    .select()
+    .single();
+
+  if (transError) throw transError;
+
+  // 2. Insert items
+  const itemsToInsert = data.items.map(item => ({
+    transferencia_id: newTrans.id,
+    materia_prima_id: item.materia_prima_id,
+    cantidad: item.cantidad,
+    unidad_medida: item.unidad_medida
+  }));
+
+  const { error: itemsError } = await supabase
+    .from('transferencia_items')
+    .insert(itemsToInsert);
+
+  if (itemsError) throw itemsError;
+
+  const { data: finalRecord, error: fetchError } = await supabase
+    .from('transferencias')
+    .select(`*, items:transferencia_items(*)`)
+    .eq('id', newTrans.id)
+    .single();
+
+  if (fetchError) throw fetchError;
+  return finalRecord as TransferenciaDB;
+};
+
+export const updateTransferenciaEnRevision = async (id: string, data: TransferenciaFormData): Promise<void> => {
+  if (!isSupabaseConfigured()) {
+    const idx = mockTransferencias.findIndex(t => t.id === id);
+    if (idx > -1) {
+      mockTransferencias[idx].almacen_origen_id = data.almacen_origen_id;
+      mockTransferencias[idx].almacen_destino_id = data.almacen_destino_id;
+      mockTransferencias[idx].comentario = data.comentario;
+      mockTransferencias[idx].imagen_url = data.imagen_url || mockTransferencias[idx].imagen_url;
+      mockTransferencias[idx].items = data.items.map(i => ({
+        id: Math.random().toString(36).substring(7),
+        transferencia_id: id,
+        materia_prima_id: i.materia_prima_id,
+        cantidad: i.cantidad,
+        unidad_medida: i.unidad_medida
+      }));
+    }
+    return;
+  }
+
+  // 1. Update main record
+  const { error: transError } = await supabase
+    .from('transferencias')
+    .update({
+      almacen_origen_id: data.almacen_origen_id,
+      almacen_destino_id: data.almacen_destino_id,
+      comentario: data.comentario,
+      imagen_url: data.imagen_url
+    })
+    .eq('id', id);
+
+  if (transError) throw transError;
+
+  // 2. Delete old items
+  await supabase.from('transferencia_items').delete().eq('transferencia_id', id);
+
+  // 3. Insert new items
+  const itemsToInsert = data.items.map(item => ({
+    transferencia_id: id,
+    materia_prima_id: item.materia_prima_id,
+    cantidad: item.cantidad,
+    unidad_medida: item.unidad_medida
+  }));
+
+  const { error: itemsError } = await supabase
+    .from('transferencia_items')
+    .insert(itemsToInsert);
+
+  if (itemsError) throw itemsError;
+}
+
+export const anularTransferencia = async (id: string): Promise<void> => {
+  if (!isSupabaseConfigured()) {
+    const t = mockTransferencias.find(t => t.id === id);
+    if (t) t.estado = 'anulado';
+    return;
+  }
+  const { error } = await supabase.from('transferencias').update({ estado: 'anulado' }).eq('id', id);
+  if (error) throw error;
+}
+
+export const aprobarTransferencia = async (id: string): Promise<void> => {
+  if (!isSupabaseConfigured()) {
+    const t = mockTransferencias.find(tx => tx.id === id);
+    if (t && t.estado === 'revision') {
+      await realizarTransferencia({
+        almacen_origen_id: t.almacen_origen_id,
+        almacen_destino_id: t.almacen_destino_id,
+        comentario: t.comentario,
+        imagen_url: t.imagen_url,
+        items: t.items || []
+      });
+      t.estado = 'aprobado';
+    }
+    return;
+  }
+
+  const { data, error } = await supabase.from('transferencias').select('*, items:transferencia_items(*)').eq('id', id).single();
+  if (error) throw error;
+  const t = data as TransferenciaDB;
+
+  if (t.estado !== 'revision') throw new Error("La transferencia ya fue procesada");
+
+  // Call realizar_transferencia for actual stock movements
+  await realizarTransferencia({
+    almacen_origen_id: t.almacen_origen_id,
+    almacen_destino_id: t.almacen_destino_id,
+    comentario: t.comentario || '',
+    imagen_url: t.imagen_url,
+    items: t.items || []
+  });
+
+  // Mark as approved
+  const { error: updateError } = await supabase.from('transferencias').update({ estado: 'aprobado' }).eq('id', id);
+  if (updateError) throw updateError;
+}
 
 export const getMovimientos = async (): Promise<Movimiento[]> => {
   if (!isSupabaseConfigured()) {
@@ -55,6 +232,19 @@ export const createMovimiento = async (data: MovimientoFormData): Promise<Movimi
 
   if (fetchError) throw fetchError;
   return newMov;
+};
+
+export const anularMovimiento = async (bundle_id: string): Promise<void> => {
+  if (!isSupabaseConfigured()) {
+    mockMovimientos = mockMovimientos.filter(m => m.bundle_id !== bundle_id);
+    return;
+  }
+  
+  const { error } = await supabase.rpc('anular_movimiento_bundle', {
+    p_bundle_id: bundle_id
+  });
+
+  if (error) throw error;
 };
 
 export const realizarTransferencia = async (data: TransferenciaFormData): Promise<void> => {

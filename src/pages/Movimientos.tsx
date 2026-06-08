@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
-import { Plus, ArrowDownToLine, ArrowUpFromLine, X, Image as ImageIcon, Camera, Calendar, Printer, FileText, Share2, MessageCircle } from 'lucide-react';
+import { Plus, ArrowDownToLine, ArrowUpFromLine, X, Image as ImageIcon, Camera, Calendar, Printer, FileText, Share2, MessageCircle, AlertCircle, Check, Trash2 } from 'lucide-react';
 import { Movimiento, MovimientoBundleFormData } from '../types';
 import { format, isWithinInterval, startOfDay, endOfDay, parseISO, subDays } from 'date-fns';
 import { CameraCapture } from '../components/CameraCapture';
@@ -10,7 +10,7 @@ import { SearchableSelect } from '../components/SearchableSelect';
 import { cn } from '../lib/utils';
 
 export default function Movimientos() {
-  const { movimientos, materiasPrimas, almacenes, stockAlmacen, addMovimiento } = useAppContext();
+  const { movimientos, materiasPrimas, almacenes, stockAlmacen, transferencias, addMovimiento, anularMovimiento, aprobarTransferencia, anularTransferencia } = useAppContext();
   const { profile, isAdmin } = useAuth();
   
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -22,6 +22,10 @@ export default function Movimientos() {
   const [filterAlmacen, setFilterAlmacen] = useState<string>('todos');
   const [startDate, setStartDate] = useState<string>(format(subDays(new Date(), 30), 'yyyy-MM-dd'));
   const [endDate, setEndDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+  
+  const transferenciasPendientes = useMemo(() => {
+    return transferencias.filter(t => t.estado === 'revision');
+  }, [transferencias]);
   
   const [formData, setFormData] = useState<MovimientoBundleFormData & { almacen_id: string }>({
     tipo: 'entrada',
@@ -315,8 +319,84 @@ export default function Movimientos() {
     window.open(`https://wa.me/?text=${encodedText}`, '_blank');
   };
 
+  const handleActionTransfer = async (id: string, action: 'aprobar' | 'anular') => {
+    if (!isAdmin) {
+      toast.error('Solo los administradores pueden realizar esta operación');
+      return;
+    }
+    if (!window.confirm(`¿Estás seguro de ${action} esta transferencia?`)) return;
+    try {
+      if (action === 'aprobar') await aprobarTransferencia(id);
+      else await anularTransferencia(id);
+      toast.success(`Transferencia ${action === 'aprobar' ? 'aprobada' : 'anulada'} correctamente`);
+    } catch(err: any) {
+      toast.error(err.message || 'Error al procesar transferencia');
+    }
+  };
+
+  const handleAnularMovimiento = async (bundle_id: string) => {
+    if (!isAdmin) {
+      toast.error('Solo los administradores pueden realizar esta operación');
+      return;
+    }
+    if (!window.confirm('¿Estás seguro de eliminar este movimiento? Se revertirá su impacto en el inventario de forma permanente.')) return;
+    try {
+      await anularMovimiento(bundle_id);
+      toast.success('Movimiento eliminado y stock revertido correctamente');
+      setSelectedBundle(null);
+    } catch(err: any) {
+      toast.error(err.message || 'Error al eliminar movimiento');
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {transferenciasPendientes.length > 0 && (
+        <div className="bg-orange-50 p-6 rounded-xl border border-orange-200 shadow-sm print:hidden">
+          <h2 className="text-xl font-bold text-orange-900 mb-4 flex items-center">
+            <AlertCircle className="mr-2" />
+            Transferencias en Revisión ({transferenciasPendientes.length})
+          </h2>
+          <div className="space-y-4">
+            {transferenciasPendientes.map(t => {
+              const almacenOrigen = almacenes.find(a => a.id === t.almacen_origen_id)?.nombre || 'Desconocido';
+              const almacenDestino = almacenes.find(a => a.id === t.almacen_destino_id)?.nombre || 'Desconocido';
+              return (
+                <div key={t.id} className="bg-white p-4 rounded-lg border border-orange-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500 mb-1">{format(new Date(t.fecha), 'dd/MM/yyyy HH:mm')}</p>
+                    <p className="font-medium text-gray-900">{almacenOrigen} ➔ {almacenDestino}</p>
+                    <div className="mt-2 text-sm text-gray-600">
+                      {t.items?.map(it => {
+                         const mp = materiasPrimas.find(m => m.id === it.materia_prima_id);
+                         return <div key={it.id}>• {mp?.nombre}: {it.cantidad} {it.unidad_medida}</div>
+                      })}
+                    </div>
+                    {t.comentario && <p className="text-sm mt-2 text-orange-800 italic">Nota: {t.comentario}</p>}
+                  </div>
+                  {(isAdmin || profile?.role === 'admin') && (
+                    <div className="flex gap-2 w-full sm:w-auto">
+                      <button 
+                        onClick={() => handleActionTransfer(t.id, 'anular')}
+                        className="flex-1 sm:flex-none px-4 py-2 border border-red-200 text-red-600 bg-red-50 hover:bg-red-100 rounded outline-none transition text-sm font-medium"
+                      >
+                        Anular
+                      </button>
+                      <button 
+                        onClick={() => handleActionTransfer(t.id, 'aprobar')}
+                        className="flex-1 sm:flex-none px-4 py-2 border border-green-600 text-white bg-green-600 hover:bg-green-700 rounded outline-none transition text-sm font-medium shadow-sm flex items-center justify-center gap-1"
+                      >
+                        <Check size={16} /> Aprobar
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 print:hidden">
         <h2 className="text-2xl font-bold text-gray-900">Historial de Movimientos</h2>
         <div className="grid grid-cols-2 sm:flex gap-2 w-full sm:w-auto">
@@ -552,6 +632,16 @@ export default function Movimientos() {
             <div className="flex justify-between items-center p-6 border-b">
               <h3 className="text-lg font-medium text-gray-900">Detalle del Movimiento</h3>
               <div className="flex items-center gap-4">
+                {(isAdmin || profile?.role === 'admin') && (
+                  <button 
+                    onClick={() => handleAnularMovimiento(selectedBundle[0].bundle_id)} 
+                    className="text-red-600 hover:text-red-700 flex items-center bg-red-50 px-2 py-1 rounded transition-colors"
+                    title="Eliminar Movimiento"
+                  >
+                    <Trash2 size={20} className="mr-1" />
+                    <span className="text-sm font-medium">Eliminar</span>
+                  </button>
+                )}
                 <button 
                   onClick={() => handleShareWhatsApp(selectedBundle)} 
                   className="text-green-600 hover:text-green-700 flex items-center bg-green-50 px-2 py-1 rounded transition-colors"

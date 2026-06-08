@@ -79,6 +79,31 @@ export type TransferenciaItem = {
   unidad_medida: string;
 };
 
+export type TransferenciaItemDB = {
+  id: string;
+  transferencia_id: string;
+  materia_prima_id: string;
+  cantidad: number;
+  unidad_medida: string;
+  // For UI joins
+  materia_prima_nombre?: string;
+};
+
+export type TransferenciaDB = {
+  id: string;
+  almacen_origen_id: string;
+  almacen_destino_id: string;
+  estado: 'revision' | 'aprobado' | 'anulado';
+  comentario?: string;
+  imagen_url?: string;
+  fecha: string;
+  created_at: string;
+  items?: TransferenciaItemDB[];
+  // For UI joins
+  almacen_origen_nombre?: string;
+  almacen_destino_nombre?: string;
+};
+
 export type TransferenciaFormData = {
   almacen_origen_id: string;
   almacen_destino_id: string;

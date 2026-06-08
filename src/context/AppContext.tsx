@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { MateriaPrima, Movimiento, MateriaPrimaFormData, MovimientoFormData, MovimientoBundleFormData, Almacen, StockAlmacen, AlmacenFormData, TransferenciaFormData, Recepcion } from '../types';
+import { MateriaPrima, Movimiento, MateriaPrimaFormData, MovimientoFormData, MovimientoBundleFormData, Almacen, StockAlmacen, AlmacenFormData, TransferenciaFormData, Recepcion, TransferenciaDB } from '../types';
 import { supabase } from '../lib/supabase';
 import * as materiaPrimaService from '../services/materiaPrima';
 import * as movimientosService from '../services/movimientos';
@@ -13,6 +13,7 @@ interface AppContextType {
   almacenes: Almacen[];
   stockAlmacen: StockAlmacen[];
   recepciones: Recepcion[];
+  transferencias: TransferenciaDB[];
   loading: boolean;
   error: string | null;
   loadData: () => Promise<void>;
@@ -20,7 +21,10 @@ interface AppContextType {
   editMateriaPrima: (id: string, data: Partial<MateriaPrimaFormData>) => Promise<void>;
   removeMateriaPrima: (id: string) => Promise<void>;
   addMovimiento: (data: MovimientoBundleFormData & { almacen_id: string }, file?: File) => Promise<void>;
+  anularMovimiento: (bundle_id: string) => Promise<void>;
   transferirStock: (data: TransferenciaFormData, file?: File) => Promise<void>;
+  aprobarTransferencia: (id: string) => Promise<void>;
+  anularTransferencia: (id: string) => Promise<void>;
   addAlmacen: (data: AlmacenFormData) => Promise<void>;
   editAlmacen: (id: string, data: Partial<AlmacenFormData>) => Promise<void>;
   removeAlmacen: (id: string) => Promise<void>;
@@ -35,6 +39,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
   const [stockAlmacen, setStockAlmacen] = useState<StockAlmacen[]>([]);
   const [recepciones, setRecepciones] = useState<Recepcion[]>([]);
+  const [transferencias, setTransferencias] = useState<TransferenciaDB[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
@@ -46,6 +51,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setMateriasPrimas([]);
       setMovimientos([]);
       setRecepciones([]);
+      setTransferencias([]);
       return;
     }
 
@@ -58,12 +64,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     
     const promise = (async () => {
       try {
-        const [mpData, movData, almData, stockData, recData] = await Promise.all([
+        const [mpData, movData, almData, stockData, recData, transData] = await Promise.all([
           materiaPrimaService.getMateriasPrimas(),
           movimientosService.getMovimientos(),
           supabase.from('almacenes').select('*'),
           supabase.from('stock_almacen').select('*'),
-          listarRecepciones()
+          listarRecepciones(),
+          movimientosService.getTransferencias()
         ]);
 
         if (almData.error) throw almData.error;
@@ -74,6 +81,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         setAlmacenes(almData.data || []);
         setStockAlmacen(stockData.data || []);
         setRecepciones(recData);
+        setTransferencias(transData);
         setInitialLoadDone(true);
       } catch (err: any) {
         console.error('Error loading data:', err);
@@ -175,6 +183,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const anularMovimiento = async (bundle_id: string) => {
+    try {
+      await movimientosService.anularMovimiento(bundle_id);
+      await loadData(); // Reload stats and history
+    } catch (err: any) {
+      throw new Error(err.message || 'Error al anular movimiento');
+    }
+  };
+
   const transferirStock = async (data: TransferenciaFormData, file?: File) => {
     try {
       let imagen_url = data.imagen_url;
@@ -182,11 +199,28 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         imagen_url = await movimientosService.uploadEvidence(file);
       }
       
-      await movimientosService.realizarTransferencia({ ...data, imagen_url });
-      // Recargar datos para asegurar consistencia (o actualizar localmente)
+      const newTrans = await movimientosService.createTransferenciaEnRevision({ ...data, imagen_url });
+      setTransferencias(prev => [newTrans, ...prev]);
+    } catch (err: any) {
+      throw new Error(err.message || 'Error al solicitar transferencia');
+    }
+  };
+
+  const aprobarTransferencia = async (id: string) => {
+    try {
+      await movimientosService.aprobarTransferencia(id);
       await loadData();
     } catch (err: any) {
-      throw new Error(err.message || 'Error al realizar transferencia');
+      throw new Error(err.message || 'Error al aprobar transferencia');
+    }
+  };
+
+  const anularTransferencia = async (id: string) => {
+    try {
+      await movimientosService.anularTransferencia(id);
+      await loadData();
+    } catch (err: any) {
+      throw new Error(err.message || 'Error al anular transferencia');
     }
   };
 
@@ -224,6 +258,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       almacenes,
       stockAlmacen,
       recepciones,
+      transferencias,
       loading: isAppDataLoading,
       error,
       loadData,
@@ -231,7 +266,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       editMateriaPrima,
       removeMateriaPrima,
       addMovimiento,
+      anularMovimiento,
       transferirStock,
+      aprobarTransferencia,
+      anularTransferencia,
       addAlmacen,
       editAlmacen,
       removeAlmacen

@@ -341,8 +341,8 @@ export default function TrasladoMgtaPage() {
       return;
     }
 
-    if (items.some(item => item.cantidad <= 0)) {
-      toast.error('La cantidad de traslado debe ser mayor que 0');
+    if (items.some(item => item.cantidad < 0)) {
+      toast.error('La cantidad de traslado no puede ser negativa');
       return;
     }
 
@@ -624,7 +624,7 @@ export default function TrasladoMgtaPage() {
                               <input
                                 type="number"
                                 required
-                                min="0.01"
+                                min="0"
                                 step="0.01"
                                 max={item.is_manual ? undefined : availableStock}
                                 placeholder="0.00"
@@ -722,7 +722,7 @@ export default function TrasladoMgtaPage() {
             <div className="flex gap-2">
               <button
                 type="submit"
-                disabled={isSubmitting || items.some(i => i.cantidad <= 0 || (!i.is_manual && !i.materia_prima_id) || (i.is_manual && !i.manual_nombre?.trim()) || !i.almacen_origen_id)}
+                disabled={isSubmitting || items.some(i => i.cantidad < 0 || (!i.is_manual && !i.materia_prima_id) || (i.is_manual && !i.manual_nombre?.trim()) || !i.almacen_origen_id)}
                 className="flex-1 h-11 bg-black hover:bg-zinc-900 text-white font-medium rounded-lg shadow-primary-subtle transition-all duration-150 disabled:opacity-40 flex items-center justify-center space-x-2"
               >
                 {isSubmitting ? (

@@ -145,7 +145,7 @@ export default function Transferencias() {
     try {
       setIsSubmitting(true);
       await transferirStock(formData, attachedFile || undefined);
-      toast.success('Transferencia realizada con éxito');
+      toast.success('Transferencia solicitada con éxito. En espera de revisión.');
       setAttachedFile(null);
       setFormData({
         almacen_origen_id: '',
@@ -324,12 +324,12 @@ export default function Transferencias() {
               {isSubmitting ? (
                 <>
                   <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                  Procesando Transferencia...
+                  Procesando...
                 </>
               ) : (
                 <>
                   <ArrowRightLeft size={20} className="mr-2" />
-                  Realizar Transferencia
+                  Solicitar Transferencia
                 </>
               )}
             </button>
